@@ -86,9 +86,9 @@ vercel --prod
 Verify:
 
 ```bash
-curl https://your-vercel-app.vercel.app/health
-curl "https://your-vercel-app.vercel.app/api/trending?page=1"
-curl "https://your-vercel-app.vercel.app/api/stream/movie/687163"
+curl https://movie-app-gamma-sand-21.vercel.app/health
+curl "https://movie-app-gamma-sand-21.vercel.app/api/trending?page=1"
+curl "https://movie-app-gamma-sand-21.vercel.app/api/stream/movie/687163"
 ```
 
 If `STREAM_PROVIDER=disabled`, stream endpoints return `501` until an authorized provider base URL is configured.
@@ -98,7 +98,7 @@ If `STREAM_PROVIDER=disabled`, stream endpoints return `501` until an authorized
 Before building production Android, point the Flutter app at your deployed backend in `frontend/lib/core/constants/app_constants.dart`:
 
 ```dart
-static const backendBaseUrl = 'https://your-vercel-app.vercel.app/api';
+static const backendBaseUrl = 'https://movie-app-gamma-sand-21.vercel.app/api';
 ```
 
 Use local emulator URL only for debug builds.

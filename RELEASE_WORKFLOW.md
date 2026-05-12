@@ -34,8 +34,8 @@ vercel --prod
 Verify:
 
 ```bash
-curl https://your-vercel-app.vercel.app/health
-curl "https://your-vercel-app.vercel.app/api/trending?page=1"
+curl https://movie-app-gamma-sand-21.vercel.app/health
+curl "https://movie-app-gamma-sand-21.vercel.app/api/trending?page=1"
 ```
 
 ## 3. Frontend Validation

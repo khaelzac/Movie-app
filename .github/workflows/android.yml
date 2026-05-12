@@ -1,0 +1,85 @@
+name: Android TV
+
+on:
+  workflow_call:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/android.yml"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Android TV Release
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.27.0"
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Decode release keystore
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/movieapp-release.jks
+          cat > android/key.properties <<EOF
+          storePassword=${ANDROID_KEYSTORE_PASSWORD}
+          keyPassword=${ANDROID_KEY_PASSWORD}
+          keyAlias=${ANDROID_KEY_ALIAS}
+          storeFile=app/movieapp-release.jks
+          EOF
+
+      - name: Build app bundle
+        run: flutter build appbundle --release --split-debug-info=build/symbols --obfuscate
+
+      - name: Build split APKs
+        run: flutter build apk --release --split-per-abi --split-debug-info=build/symbols --obfuscate
+
+      - name: Upload app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: movieapp-android-tv-aab
+          path: frontend/build/app/outputs/bundle/release/*.aab
+
+      - name: Upload split APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: movieapp-android-tv-apks
+          path: frontend/build/app/outputs/flutter-apk/*.apk
+
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: movieapp-dart-symbols
+          path: frontend/build/symbols

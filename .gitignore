@@ -1,0 +1,13 @@
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+node_modules/
+.env
+.env.example
+package-lock.json
+frontend/android/key.properties
+frontend/android/app/*.jks
+frontend/android/app/*.keystore
+*.log

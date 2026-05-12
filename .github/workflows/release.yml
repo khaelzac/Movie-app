@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  backend-check:
+    uses: ./.github/workflows/backend.yml
+    secrets: inherit
+
+  android-release:
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+
+  create-github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [backend-check, android-release]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create release notes
+        run: |
+          mkdir -p release
+          cat > release/notes.md <<'EOF'
+          Production release for MovieApp.
+
+          Checklist before publishing:
+          - Backend is deployed to Vercel production.
+          - Android bundle/APKs were built from this tag.
+          - TMDB API key is configured in Vercel.
+          - Frontend backend URL points to the production backend.
+          EOF
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release/notes.md

@@ -150,9 +150,9 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
             return Stack(
               fit: StackFit.expand,
               children: [
-                GestureDetector(
+                Listener(
                   behavior: HitTestBehavior.translucent,
-                  onTap: _showControlsTemporarily,
+                  onPointerDown: (_) => _showControlsTemporarily(),
                   child: _webViewWidget(controller),
                 ),
                 if (_loading)
@@ -163,12 +163,40 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                             color: AppColors.netflixRed)),
                   ),
                 if (_webViewError != null)
-                  _PlaybackError(
-                    message: _webViewError!,
-                    onRetry: () {
-                      setState(() => _webViewError = null);
-                      controller.reload();
-                    },
+                  ColoredBox(
+                    color: Colors.black,
+                    child: _PlaybackError(
+                      message: _webViewError!,
+                      onRetry: () {
+                        setState(() => _webViewError = null);
+                        controller.reload();
+                      },
+                    ),
+                  ),
+                if (_webViewError != null)
+                  SafeArea(
+                    child: Align(
+                      alignment: Alignment.bottomLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: _ServerSwitcher(
+                          providers: providerOptions,
+                          selectedProvider: effectiveProvider.id,
+                          isLoading: providers.isLoading,
+                          errorMessage: providers.hasError
+                              ? 'Server list could not be loaded.'
+                              : null,
+                          onSelected: (provider) {
+                            if (provider == effectiveProvider.id) return;
+                            setState(() {
+                              _selectedProvider = provider;
+                              _loadedUrl = null;
+                              _webViewError = null;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
                   ),
                 AnimatedOpacity(
                   opacity: _controlsVisible ? 1 : 0,
@@ -320,8 +348,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
             if (error.isForMainFrame == false || !mounted) return;
             setState(() {
               _loading = false;
-              _webViewError =
-                  'The playback page could not load: ${error.description}';
+              _webViewError = _friendlyWebViewMessage(error);
             });
           },
         ),
@@ -352,6 +379,24 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     }
 
     return WebViewWidget.fromPlatformCreationParams(params: params);
+  }
+
+  String _friendlyWebViewMessage(WebResourceError error) {
+    final description = error.description.trim();
+    final lowerDescription = description.toLowerCase();
+
+    if (lowerDescription.contains('connection_refused') ||
+        lowerDescription.contains('connection refused')) {
+      return 'This playback server refused the connection. Try another server, or update that server base URL and path pattern in the backend environment.';
+    }
+
+    if (lowerDescription.contains('host') ||
+        lowerDescription.contains('name_not_resolved') ||
+        lowerDescription.contains('not resolved')) {
+      return 'This playback server could not be reached. Try another server or check the backend provider URL.';
+    }
+
+    return 'The playback page could not load: $description';
   }
 
   bool _shouldBlockNavigation(String nextUrl) {

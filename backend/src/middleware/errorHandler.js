@@ -12,7 +12,7 @@ const errorHandler = (err, _req, res, _next) => {
   const status = err.status || err.response?.status || 500;
   const message = err.response?.data?.status_message || err.message || 'Unexpected server error';
 
-  if (status >= 500) {
+  if (status >= 500 && status !== 502) {
     console.error(err);
   }
 

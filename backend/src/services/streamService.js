@@ -21,6 +21,7 @@ const providers = {
 };
 
 const resolverByProvider = {
+  'env-2': vidsrcResolver,
   vidsrc: vidsrcResolver,
   'env-3': vidsrcResolver,
   'env-5': vidsrcResolver,
@@ -110,6 +111,31 @@ const delay = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
 
+const providerFailureMessage = (error) => {
+  const status = error.response?.status || error.status;
+  if (status === 403) return 'upstream rejected the request';
+  if (status === 404) return 'upstream embed URL was not found';
+  if (status === 429) return 'upstream rate limited the request';
+  if (status) return `upstream returned ${status}`;
+
+  if (error.code === 'ENOTFOUND') return 'DNS not found';
+  if (error.code === 'ECONNABORTED') return 'request timed out';
+  if (error.code === 'CERT_HAS_EXPIRED' || /certificate has expired/i.test(error.message)) {
+    return 'certificate has expired';
+  }
+  if (/no hls stream url found/i.test(error.message)) return error.message;
+  if (/not a valid url|not an hls/i.test(error.message)) return error.message;
+
+  return error.message || 'provider failed';
+};
+
+const providerFailure = (provider, error) => {
+  const wrapped = new Error(`${provider.name}: ${providerFailureMessage(error)}`);
+  wrapped.status = 502;
+  wrapped.cause = error;
+  return wrapped;
+};
+
 const resolveWithRetry = async (provider, source) => {
   const resolver = resolverByProvider[provider.name] || genericResolver;
   let lastError;
@@ -151,8 +177,9 @@ const resolveFromProviders = async (mediaFactory, providerName) => {
         subtitles: Array.isArray(resolved.subtitles) ? resolved.subtitles : []
       };
     } catch (error) {
-      failures.push(`${provider.name}: ${error.message}`);
-      if (providerName) throw error;
+      const failure = providerFailure(provider, error);
+      failures.push(failure.message);
+      if (providerName) throw failure;
     }
   }
 

@@ -14,7 +14,8 @@ dependencies:
   flutter:
     sdk: flutter
   cached_network_image: ^3.4.1
-  better_player: ^0.0.84
+  better_player:
+    path: packages/better_player
   dio: ^5.7.0
   flutter_animate: ^4.5.2
   flutter_riverpod: ^2.6.1

@@ -32,13 +32,47 @@ const numberedEmbedProviders = () => {
 
   return [...indexes]
     .sort((a, b) => a - b)
-    .map((index) => ({
+    .map((index) => normalizeEmbedProvider({
       id: `env-${index}`,
       name: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_NAME`) || `Server ${index}`,
       baseUrl: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_BASE_URL`),
       moviePattern: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_MOVIE_PATTERN`) || '/movie/{tmdb_id}',
       tvPattern: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_TV_PATTERN`) || '/tv/{tmdb_id}/{season}/{episode}'
     }));
+};
+
+const hostnameFrom = (value) => {
+  try {
+    return new URL(value).hostname.replace(/^www\./, '').toLowerCase();
+  } catch (_error) {
+    return '';
+  }
+};
+
+const normalizeEmbedProvider = (provider) => {
+  const host = hostnameFrom(provider.baseUrl);
+
+  if (host === 'vidlink.pro') {
+    return {
+      ...provider,
+      moviePattern: '/movie/{tmdb_id}',
+      tvPattern: '/tv/{tmdb_id}/{season}/{episode}'
+    };
+  }
+
+  if (host === 'vidsrc.cc') {
+    const baseUrl = provider.baseUrl.replace(/\/+$/, '').endsWith('/v2')
+      ? provider.baseUrl
+      : `${provider.baseUrl.replace(/\/+$/, '')}/v2`;
+    return {
+      ...provider,
+      baseUrl,
+      moviePattern: '/embed/movie/{tmdb_id}',
+      tvPattern: '/embed/tv/{tmdb_id}/{season}/{episode}'
+    };
+  }
+
+  return provider;
 };
 
 const env = {

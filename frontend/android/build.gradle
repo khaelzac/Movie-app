@@ -9,6 +9,17 @@ rootProject.buildDir = "../build"
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
+subprojects { subproject ->
+    subproject.plugins.withId("com.android.library") {
+        def androidExtension = subproject.extensions.findByName("android")
+        if (androidExtension != null && androidExtension.namespace == null) {
+            def pluginNamespaces = [
+                better_player: "com.jhomlala.better_player"
+            ]
+            androidExtension.namespace = pluginNamespaces[subproject.name] ?: "com.movieapp.plugins.${subproject.name.replaceAll("[^A-Za-z0-9_]", "_")}"
+        }
+    }
+}
 subprojects {
     project.evaluationDependsOn(":app")
 }

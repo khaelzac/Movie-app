@@ -55,6 +55,46 @@ const fetchEmbedHtml = (embedUrl, options = {}) => fetchText(embedUrl, {
   accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
 });
 
+const documentUrlsFrom = (html, baseUrl) => {
+  const $ = cheerio.load(html);
+  const urls = [];
+
+  $('iframe[src], embed[src], source[src], video[src], a[href]').each((_index, element) => {
+    const raw = $(element).attr('src') || $(element).attr('href');
+    const url = toAbsoluteUrl(raw, baseUrl);
+    if (url) urls.push(url);
+  });
+
+  $('[data-src], [data-url], [data-href], [data-file]').each((_index, element) => {
+    for (const attr of ['data-src', 'data-url', 'data-href', 'data-file']) {
+      const url = toAbsoluteUrl($(element).attr(attr), baseUrl);
+      if (url) urls.push(url);
+    }
+  });
+
+  return unique(urls);
+};
+
+const apiUrlsFromPayload = (payload, baseUrl) => {
+  const urls = [];
+  const patterns = [
+    /fetch\(\s*["']([^"']+)["']/gi,
+    /axios\.(?:get|post)\(\s*["']([^"']+)["']/gi,
+    /(?:url|file|source|playlist|stream)\s*[:=]\s*["']([^"']+)["']/gi
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of payload.matchAll(pattern)) {
+      const value = match[1];
+      if (!value || value.includes('${') || value.includes('.concat(')) continue;
+      const url = toAbsoluteUrl(value, baseUrl);
+      if (url) urls.push(url);
+    }
+  }
+
+  return unique(urls);
+};
+
 const scriptSourcesFrom = (html, baseUrl) => {
   const $ = cheerio.load(html);
   const sources = [];
@@ -156,34 +196,81 @@ const extractSubtitles = (payload, baseUrl) => {
 const createHtmlResolver = ({ name }) => ({
   name,
   resolve: async ({ embedUrl }, options = {}) => {
-    const html = await fetchEmbedHtml(embedUrl, {
-      timeoutMs: options.timeoutMs,
-      referer: options.referer
-    });
-    const payload = await extractScriptPayload(html, embedUrl, {
-      timeoutMs: options.timeoutMs
-    });
-    const [streamUrl] = extractM3u8Urls(payload, embedUrl);
+    const visited = new Set();
+    const queue = [embedUrl];
+    let subtitles = [];
 
-    if (!streamUrl) {
-      const error = new Error(`No HLS stream URL found for ${name}.`);
-      error.status = 502;
-      throw error;
+    while (queue.length > 0 && visited.size < 8) {
+      const currentUrl = queue.shift();
+      if (!currentUrl || visited.has(currentUrl)) continue;
+      visited.add(currentUrl);
+
+      const html = await fetchEmbedHtml(currentUrl, {
+        timeoutMs: options.timeoutMs,
+        referer: options.referer || embedUrl
+      });
+      const payload = await extractScriptPayload(html, currentUrl, {
+        timeoutMs: options.timeoutMs
+      });
+      const [streamUrl] = extractM3u8Urls(payload, currentUrl);
+      subtitles = [
+        ...subtitles,
+        ...extractSubtitles(payload, currentUrl)
+      ];
+
+      if (streamUrl) {
+        return {
+          streamUrl,
+          referer: new URL(currentUrl).origin,
+          subtitles: uniqueSubtitles(subtitles)
+        };
+      }
+
+      for (const nextUrl of [
+        ...documentUrlsFrom(html, currentUrl),
+        ...apiUrlsFromPayload(payload, currentUrl)
+      ]) {
+        if (!visited.has(nextUrl) && shouldCrawlUrl(nextUrl)) {
+          queue.push(nextUrl);
+        }
+      }
     }
 
-    return {
-      streamUrl,
-      referer: new URL(embedUrl).origin,
-      subtitles: extractSubtitles(payload, embedUrl)
-    };
+    const error = new Error(`No HLS stream URL found for ${name}.`);
+    error.status = 502;
+    throw error;
   }
 });
 
+const uniqueSubtitles = (subtitles) => {
+  const seen = new Set();
+  return subtitles.filter((subtitle) => {
+    if (!subtitle.url || seen.has(subtitle.url)) return false;
+    seen.add(subtitle.url);
+    return true;
+  });
+};
+
+const shouldCrawlUrl = (url) => {
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname.toLowerCase();
+    if (/\.(png|jpe?g|gif|webp|svg|css|woff2?|ttf|ico)$/i.test(pathname)) {
+      return false;
+    }
+    return ['http:', 'https:'].includes(parsed.protocol);
+  } catch (_error) {
+    return false;
+  }
+};
+
 module.exports = {
   createHtmlResolver,
+  documentUrlsFrom,
   extractM3u8Urls,
   extractScriptPayload,
   extractSubtitles,
   fetchEmbedHtml,
+  fetchText,
   toAbsoluteUrl
 };

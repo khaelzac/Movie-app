@@ -26,6 +26,10 @@ const providerOrder = () => {
   return requested.filter((name) => name !== 'disabled');
 };
 
+const orderedProviders = () => providerOrder()
+  .map((name) => providers[name])
+  .filter(Boolean);
+
 const configuredProviders = () => providerOrder()
   .map((name) => providers[name])
   .filter((provider) => provider && provider.isConfigured());
@@ -46,9 +50,10 @@ const activeProvider = (providerName) => {
 };
 
 const streamService = {
-  providers: () => configuredProviders().map((provider) => ({
+  providers: () => orderedProviders().map((provider) => ({
     id: provider.name,
-    name: provider.label || provider.name
+    name: provider.label || provider.name,
+    configured: provider.isConfigured()
   })),
   movie: (tmdbId, providerName) => activeProvider(providerName).movie(tmdbId),
   tv: (tmdbId, season, episode, providerName) => activeProvider(providerName).tv(tmdbId, season, episode)

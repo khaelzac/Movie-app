@@ -64,14 +64,70 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     final providers = ref.watch(streamProvidersProvider);
     final providerOptions =
         providers.valueOrNull ?? const <StreamProviderInfo>[];
-    final effectiveProvider = _selectedProvider ??
-        (providerOptions.isEmpty ? null : providerOptions.first.id);
+    final configuredProviders = providerOptions
+        .where((provider) => provider.configured)
+        .toList(growable: false);
+    final selectedProvider = _selectedProvider == null
+        ? null
+        : _providerById(configuredProviders, _selectedProvider!);
+    final effectiveProvider = selectedProvider ??
+        (configuredProviders.isEmpty ? null : configuredProviders.first);
+
+    if (providers.isLoading && providerOptions.isEmpty) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+            child: CircularProgressIndicator(color: AppColors.netflixRed)),
+      );
+    }
+
+    if (providers.hasError ||
+        providerOptions.isEmpty ||
+        effectiveProvider == null) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            _PlaybackError(
+              message: providers.hasError
+                  ? 'The server list could not be loaded. Check the backend URL and Vercel environment variables.'
+                  : 'No configured playback servers were found. Add provider names and base URLs in the backend environment, then redeploy.',
+              onRetry: () => ref.invalidate(streamProvidersProvider),
+            ),
+            SafeArea(
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: _ServerSwitcher(
+                    providers: providerOptions,
+                    selectedProvider: _selectedProvider ?? '',
+                    isLoading: providers.isLoading,
+                    errorMessage: providerOptions.isEmpty
+                        ? 'No servers configured.'
+                        : null,
+                    onSelected: (provider) {
+                      setState(() {
+                        _selectedProvider = provider;
+                        _loadedUrl = null;
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final request = StreamRequest(
       mediaType: widget.mediaType,
       id: widget.id,
       season: widget.season,
       episode: widget.episode,
-      provider: effectiveProvider,
+      provider: effectiveProvider.id,
     );
     final source = ref.watch(streamSourceProvider(request));
 
@@ -180,13 +236,13 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                     padding: const EdgeInsets.all(14),
                     child: _ServerSwitcher(
                       providers: providerOptions,
-                      selectedProvider: effectiveProvider ?? '',
+                      selectedProvider: effectiveProvider.id,
                       isLoading: providers.isLoading,
                       errorMessage: providers.hasError
                           ? 'Server list could not be loaded.'
                           : null,
                       onSelected: (provider) {
-                        if (provider == effectiveProvider) return;
+                        if (provider == effectiveProvider.id) return;
                         setState(() {
                           _selectedProvider = provider;
                           _loadedUrl = null;
@@ -217,6 +273,14 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
       return 'This server did not respond. Try another server.';
     }
     return 'This server could not start playback. Try another server.';
+  }
+
+  StreamProviderInfo? _providerById(
+      List<StreamProviderInfo> providers, String id) {
+    for (final provider in providers) {
+      if (provider.id == id) return provider;
+    }
+    return null;
   }
 
   WebViewController _loadSource(String url) {
@@ -351,18 +415,25 @@ class _ServerSwitcher extends StatelessWidget {
                 ),
               for (final provider in visibleProviders)
                 ChoiceChip(
-                  label:
-                      Text(provider.name.isEmpty ? provider.id : provider.name),
+                  label: Text(
+                    provider.configured
+                        ? (provider.name.isEmpty ? provider.id : provider.name)
+                        : '${provider.name.isEmpty ? provider.id : provider.name} (not configured)',
+                  ),
                   selected: provider.id == selectedProvider,
                   selectedColor: AppColors.netflixRed,
                   backgroundColor:
                       AppColors.surfaceRaised.withValues(alpha: 0.92),
                   labelStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: Colors.white,
+                        color: provider.configured
+                            ? Colors.white
+                            : AppColors.textMuted,
                         fontWeight: FontWeight.w800,
                       ),
                   side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
-                  onSelected: (_) => onSelected(provider.id),
+                  onSelected: provider.configured
+                      ? (_) => onSelected(provider.id)
+                      : null,
                 ),
             ],
           ),

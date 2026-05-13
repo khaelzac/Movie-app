@@ -38,8 +38,7 @@ const numberedEmbedProviders = () => {
       baseUrl: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_BASE_URL`),
       moviePattern: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_MOVIE_PATTERN`) || '/movie/{tmdb_id}',
       tvPattern: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_TV_PATTERN`) || '/tv/{tmdb_id}/{season}/{episode}'
-    }))
-    .filter((provider) => provider.baseUrl);
+    }));
 };
 
 const env = {

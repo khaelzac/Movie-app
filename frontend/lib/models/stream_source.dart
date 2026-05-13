@@ -31,15 +31,18 @@ class StreamProviderInfo {
   const StreamProviderInfo({
     required this.id,
     required this.name,
+    this.configured = true,
   });
 
   final String id;
   final String name;
+  final bool configured;
 
   factory StreamProviderInfo.fromJson(Map<String, dynamic> json) {
     return StreamProviderInfo(
       id: (json['id'] ?? '') as String,
       name: (json['name'] ?? '') as String,
+      configured: json['configured'] as bool? ?? true,
     );
   }
 }

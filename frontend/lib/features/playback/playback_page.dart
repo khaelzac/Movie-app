@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -36,8 +38,10 @@ class PlaybackPage extends ConsumerStatefulWidget {
 class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   WebViewController? _controller;
   bool _loading = true;
+  bool _controlsVisible = true;
   String? _loadedUrl;
   String? _selectedProvider;
+  Timer? _controlsTimer;
 
   @override
   void initState() {
@@ -47,10 +51,12 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+    _scheduleControlsHide();
   }
 
   @override
   void dispose() {
+    _controlsTimer?.cancel();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
@@ -142,7 +148,11 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
             return Stack(
               fit: StackFit.expand,
               children: [
-                WebViewWidget(controller: controller),
+                GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: _showControlsTemporarily,
+                  child: WebViewWidget(controller: controller),
+                ),
                 if (_loading)
                   const ColoredBox(
                     color: Colors.black,
@@ -150,71 +160,30 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                         child: CircularProgressIndicator(
                             color: AppColors.netflixRed)),
                   ),
-                SafeArea(
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: FocusTraversalGroup(
-                        child: Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            IconButton.filledTonal(
-                              onPressed: () => Navigator.of(context).maybePop(),
-                              icon: const Icon(Icons.arrow_back_rounded),
-                              tooltip: 'Back',
+                AnimatedOpacity(
+                  opacity: _controlsVisible ? 1 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  child: IgnorePointer(
+                    ignoring: !_controlsVisible,
+                    child: SafeArea(
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: _PlaybackControls(
+                            mediaType: widget.mediaType,
+                            onBack: () => Navigator.of(context).maybePop(),
+                            onServers: () => _showServerSheet(
+                              context,
+                              providers.valueOrNull ??
+                                  const <StreamProviderInfo>[],
+                              source.provider,
                             ),
-                            FilledButton.icon(
-                              onPressed: () => _saveProgress(),
-                              icon: const Icon(Icons.bookmark_rounded),
-                              label: const Text('Save Progress'),
-                              style: FilledButton.styleFrom(
-                                backgroundColor:
-                                    Colors.black.withValues(alpha: 0.62),
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                            if (widget.mediaType == 'tv')
-                              FilledButton.icon(
-                                onPressed: _nextEpisode,
-                                icon: const Icon(Icons.skip_next_rounded),
-                                label: const Text('Next Episode'),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor:
-                                      Colors.black.withValues(alpha: 0.62),
-                                  foregroundColor: Colors.white,
-                                ),
-                              ),
-                          ],
+                            onSaveProgress: _saveProgress,
+                            onNextEpisode:
+                                widget.mediaType == 'tv' ? _nextEpisode : null,
+                          ),
                         ),
-                      ),
-                    ),
-                  ),
-                ),
-                SafeArea(
-                  child: Align(
-                    alignment: Alignment.bottomLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: _ServerSwitcher(
-                        providers: providers.valueOrNull ??
-                            [
-                              StreamProviderInfo(
-                                  id: source.provider, name: source.provider)
-                            ],
-                        selectedProvider: source.provider,
-                        isLoading: providers.isLoading,
-                        errorMessage: providers.hasError
-                            ? 'Server list could not be refreshed.'
-                            : null,
-                        onSelected: (provider) {
-                          if (provider == source.provider) return;
-                          setState(() {
-                            _selectedProvider = provider;
-                            _loadedUrl = null;
-                          });
-                        },
                       ),
                     ),
                   ),
@@ -261,6 +230,21 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     );
   }
 
+  void _showControlsTemporarily() {
+    if (!_controlsVisible) {
+      setState(() => _controlsVisible = true);
+    }
+    _scheduleControlsHide();
+  }
+
+  void _scheduleControlsHide() {
+    _controlsTimer?.cancel();
+    _controlsTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted || _loading) return;
+      setState(() => _controlsVisible = false);
+    });
+  }
+
   String _friendlyPlaybackMessage(Object error) {
     final raw = error.toString();
     if (raw.contains('501') ||
@@ -289,11 +273,20 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
       ..setBackgroundColor(Colors.black)
       ..setNavigationDelegate(
         NavigationDelegate(
+          onNavigationRequest: (request) {
+            if (_shouldBlockNavigation(request.url)) {
+              return NavigationDecision.prevent;
+            }
+            return NavigationDecision.navigate;
+          },
           onPageStarted: (_) {
             if (mounted) setState(() => _loading = true);
           },
           onPageFinished: (_) {
-            if (mounted) setState(() => _loading = false);
+            if (mounted) {
+              setState(() => _loading = false);
+              _scheduleControlsHide();
+            }
           },
         ),
       );
@@ -305,6 +298,100 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     }
 
     return controller;
+  }
+
+  bool _shouldBlockNavigation(String nextUrl) {
+    final current = _loadedUrl;
+    if (current == null || nextUrl == current) return false;
+
+    final currentUri = Uri.tryParse(current);
+    final nextUri = Uri.tryParse(nextUrl);
+    if (currentUri == null || nextUri == null) return false;
+
+    if (nextUri.scheme != 'http' && nextUri.scheme != 'https') return true;
+    return nextUri.host.isNotEmpty &&
+        currentUri.host.isNotEmpty &&
+        nextUri.host != currentUri.host;
+  }
+
+  void _showServerSheet(
+    BuildContext context,
+    List<StreamProviderInfo> providers,
+    String selectedProvider,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      showDragHandle: true,
+      builder: (context) {
+        final visibleProviders = providers
+            .where((provider) => provider.id.isNotEmpty)
+            .toList(growable: false);
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Servers',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 12),
+                if (visibleProviders.isEmpty)
+                  Text(
+                    'No servers configured.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(color: AppColors.textMuted),
+                  )
+                else
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      for (final provider in visibleProviders)
+                        ChoiceChip(
+                          label: Text(provider.configured
+                              ? (provider.name.isEmpty
+                                  ? provider.id
+                                  : provider.name)
+                              : '${provider.name.isEmpty ? provider.id : provider.name} (not configured)'),
+                          selected: provider.id == selectedProvider,
+                          selectedColor: AppColors.netflixRed,
+                          backgroundColor: AppColors.surfaceRaised,
+                          labelStyle:
+                              Theme.of(context).textTheme.labelLarge?.copyWith(
+                                    color: provider.configured
+                                        ? Colors.white
+                                        : AppColors.textMuted,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                          onSelected: provider.configured
+                              ? (_) {
+                                  Navigator.of(context).pop();
+                                  if (provider.id == selectedProvider) return;
+                                  setState(() {
+                                    _selectedProvider = provider.id;
+                                    _loadedUrl = null;
+                                  });
+                                }
+                              : null,
+                        ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _saveProgress() async {
@@ -439,6 +526,65 @@ class _ServerSwitcher extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PlaybackControls extends StatelessWidget {
+  const _PlaybackControls({
+    required this.mediaType,
+    required this.onBack,
+    required this.onServers,
+    required this.onSaveProgress,
+    this.onNextEpisode,
+  });
+
+  final String mediaType;
+  final VoidCallback onBack;
+  final VoidCallback onServers;
+  final VoidCallback onSaveProgress;
+  final VoidCallback? onNextEpisode;
+
+  @override
+  Widget build(BuildContext context) {
+    return FocusTraversalGroup(
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          IconButton.filledTonal(
+            onPressed: onBack,
+            icon: const Icon(Icons.arrow_back_rounded),
+            tooltip: 'Back',
+          ),
+          FilledButton.icon(
+            onPressed: onServers,
+            icon: const Icon(Icons.dns_rounded),
+            label: const Text('Servers'),
+            style: _buttonStyle(context),
+          ),
+          FilledButton.icon(
+            onPressed: onSaveProgress,
+            icon: const Icon(Icons.bookmark_rounded),
+            label: const Text('Save Progress'),
+            style: _buttonStyle(context),
+          ),
+          if (mediaType == 'tv' && onNextEpisode != null)
+            FilledButton.icon(
+              onPressed: onNextEpisode,
+              icon: const Icon(Icons.skip_next_rounded),
+              label: const Text('Next Episode'),
+              style: _buttonStyle(context),
+            ),
+        ],
+      ),
+    );
+  }
+
+  ButtonStyle _buttonStyle(BuildContext context) {
+    return FilledButton.styleFrom(
+      backgroundColor: Colors.black.withValues(alpha: 0.62),
+      foregroundColor: Colors.white,
     );
   }
 }

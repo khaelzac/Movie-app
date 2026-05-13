@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_constants.dart';
+
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
 
@@ -21,7 +24,15 @@ class _SplashPageState extends State<SplashPage> {
   Widget build(BuildContext context) {
     return const Scaffold(
       body: Center(
-        child: Text('MOVIEAPP', style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: Color(0xFFE50914))),
+        child: Text(
+          AppConstants.appName,
+          style: TextStyle(
+            fontSize: 48,
+            fontWeight: FontWeight.w900,
+            color: AppColors.netflixRed,
+            letterSpacing: 0,
+          ),
+        ),
       ),
     );
   }

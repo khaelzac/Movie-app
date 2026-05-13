@@ -8,8 +8,9 @@
         android:pathData="M0,0h108v108h-108z" />
     <path
         android:fillColor="@color/launcher_accent"
-        android:pathData="M28,26h14l12,25l12,-25h14v56h-13v-32l-9,19h-8l-9,-19v32h-13z" />
+        android:fillType="evenOdd"
+        android:pathData="M54,18C34.12,18 18,34.12 18,54C18,73.88 34.12,90 54,90C73.88,90 90,73.88 90,54C90,34.12 73.88,18 54,18ZM54,34C65.05,34 74,42.95 74,54C74,65.05 65.05,74 54,74C42.95,74 34,65.05 34,54C34,42.95 42.95,34 54,34Z" />
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M25,84h58v6h-58z" />
+        android:pathData="M41,84h26v6h-26z" />
 </vector>

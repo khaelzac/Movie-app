@@ -24,59 +24,65 @@ class HomePage extends ConsumerWidget {
     final hero = trending.items.isNotEmpty ? trending.items.first : null;
 
     return Scaffold(
-      body: CustomScrollView(
-        key: const PageStorageKey('home-scroll'),
-        cacheExtent: 1400,
-        slivers: [
-          SliverToBoxAdapter(
-            child: hero == null
-                ? const _HeroBannerSkeleton()
-                : HeroBanner(
-                    item: hero,
-                    onPlay: () => _openDetails(context, hero),
-                    onMoreInfo: () => _openDetails(context, hero),
+      body: Stack(
+        children: [
+          CustomScrollView(
+            key: const PageStorageKey('home-scroll'),
+            cacheExtent: 1400,
+            slivers: [
+              SliverToBoxAdapter(
+                child: hero == null
+                    ? const _HeroBannerSkeleton()
+                    : HeroBanner(
+                        item: hero,
+                        onPlay: () => _openDetails(context, hero),
+                        onMoreInfo: () => _openDetails(context, hero),
+                      ),
+              ),
+              SliverToBoxAdapter(
+                child: ContinueWatchingRail(
+                  items: progress,
+                  onClear: ref
+                      .read(libraryControllerProvider.notifier)
+                      .clearProgress,
+                ),
+              ),
+              const SliverToBoxAdapter(
+                  child: _HomeRail(title: 'Trending', railKey: 'trending')),
+              const SliverToBoxAdapter(
+                  child: _HomeRail(
+                      title: 'Popular Movies', railKey: 'popularMovies')),
+              const SliverToBoxAdapter(
+                  child: _HomeRail(
+                      title: 'Popular TV Shows', railKey: 'popularTv')),
+              const SliverToBoxAdapter(
+                  child: _HomeRail(title: 'Top Rated', railKey: 'topRated')),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    ResponsiveLayout.horizontalPadding(context),
+                    6,
+                    ResponsiveLayout.horizontalPadding(context),
+                    18,
                   ),
-          ),
-          SliverToBoxAdapter(
-            child: ContinueWatchingRail(
-              items: progress,
-              onClear:
-                  ref.read(libraryControllerProvider.notifier).clearProgress,
-            ),
-          ),
-          const SliverToBoxAdapter(
-              child: _HomeRail(title: 'Trending', railKey: 'trending')),
-          const SliverToBoxAdapter(
-              child:
-                  _HomeRail(title: 'Popular Movies', railKey: 'popularMovies')),
-          const SliverToBoxAdapter(
-              child:
-                  _HomeRail(title: 'Popular TV Shows', railKey: 'popularTv')),
-          const SliverToBoxAdapter(
-              child: _HomeRail(title: 'Top Rated', railKey: 'topRated')),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                ResponsiveLayout.horizontalPadding(context),
-                6,
-                ResponsiveLayout.horizontalPadding(context),
-                18,
+                  child: Text(
+                    'Genres',
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                ),
               ),
-              child: Text(
-                'Genres',
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w900),
-              ),
-            ),
+              for (final slug in homeGenreSlugs)
+                SliverToBoxAdapter(
+                  child: _HomeRail(
+                      title: homeGenreTitle(slug), railKey: 'genre:$slug'),
+                ),
+              const SliverToBoxAdapter(child: SizedBox(height: 48)),
+            ],
           ),
-          for (final slug in homeGenreSlugs)
-            SliverToBoxAdapter(
-              child: _HomeRail(
-                  title: homeGenreTitle(slug), railKey: 'genre:$slug'),
-            ),
-          const SliverToBoxAdapter(child: SizedBox(height: 48)),
+          const _HomeTopBar(),
         ],
       ),
     );
@@ -86,6 +92,102 @@ class HomePage extends ConsumerWidget {
     final id = item.id.toString();
     context
         .push(item.mediaType == 'tv' ? AppRoutes.tv(id) : AppRoutes.movie(id));
+  }
+}
+
+class _HomeTopBar extends StatelessWidget {
+  const _HomeTopBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final isTv = ResponsiveLayout.isTv(context);
+    final padding = ResponsiveLayout.horizontalPadding(context);
+
+    return Positioned(
+      left: 0,
+      top: 0,
+      right: 0,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xE6090909), Color(0x00090909)],
+          ),
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(padding, isTv ? 18 : 10, padding, 28),
+            child: Row(
+              children: [
+                Text(
+                  'OCAMPOFLIX',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: AppColors.netflixRed,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                ),
+                if (isTv) ...[
+                  const SizedBox(width: 28),
+                  _TopBarLink(
+                    label: 'Home',
+                    onPressed: () => context.go(AppRoutes.home),
+                  ),
+                  _TopBarLink(
+                    label: 'Search',
+                    onPressed: () => context.push(AppRoutes.search),
+                  ),
+                  _TopBarLink(
+                    label: 'My List',
+                    onPressed: () => context.push(AppRoutes.myList),
+                  ),
+                ],
+                const Spacer(),
+                Tooltip(
+                  message: 'Search',
+                  child: IconButton.filled(
+                    onPressed: () => context.push(AppRoutes.search),
+                    icon: const Icon(Icons.search_rounded),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black.withValues(alpha: 0.48),
+                      foregroundColor: Colors.white,
+                      fixedSize: Size.square(isTv ? 48 : 42),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TopBarLink extends StatelessWidget {
+  const _TopBarLink({
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.white,
+        textStyle: Theme.of(context)
+            .textTheme
+            .labelLarge
+            ?.copyWith(fontWeight: FontWeight.w800),
+      ),
+      child: Text(label),
+    );
   }
 }
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/constants/app_colors.dart';
@@ -39,6 +40,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   WebViewController? _controller;
   bool _loading = true;
   bool _controlsVisible = true;
+  String? _webViewError;
   String? _loadedUrl;
   String? _selectedProvider;
   Timer? _controlsTimer;
@@ -151,7 +153,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                 GestureDetector(
                   behavior: HitTestBehavior.translucent,
                   onTap: _showControlsTemporarily,
-                  child: WebViewWidget(controller: controller),
+                  child: _webViewWidget(controller),
                 ),
                 if (_loading)
                   const ColoredBox(
@@ -159,6 +161,14 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                     child: Center(
                         child: CircularProgressIndicator(
                             color: AppColors.netflixRed)),
+                  ),
+                if (_webViewError != null)
+                  _PlaybackError(
+                    message: _webViewError!,
+                    onRetry: () {
+                      setState(() => _webViewError = null);
+                      controller.reload();
+                    },
                   ),
                 AnimatedOpacity(
                   opacity: _controlsVisible ? 1 : 0,
@@ -268,7 +278,20 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   }
 
   WebViewController _loadSource(String url) {
-    final controller = _controller ??= WebViewController()
+    final controller = _controller ??= _createController();
+
+    if (_loadedUrl != url) {
+      _loadedUrl = url;
+      _loading = true;
+      _webViewError = null;
+      controller.loadRequest(Uri.parse(url));
+    }
+
+    return controller;
+  }
+
+  WebViewController _createController() {
+    final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.black)
       ..setNavigationDelegate(
@@ -280,7 +303,12 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
             return NavigationDecision.navigate;
           },
           onPageStarted: (_) {
-            if (mounted) setState(() => _loading = true);
+            if (mounted) {
+              setState(() {
+                _loading = true;
+                _webViewError = null;
+              });
+            }
           },
           onPageFinished: (_) {
             if (mounted) {
@@ -288,16 +316,42 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
               _scheduleControlsHide();
             }
           },
+          onWebResourceError: (error) {
+            if (error.isForMainFrame == false || !mounted) return;
+            setState(() {
+              _loading = false;
+              _webViewError =
+                  'The playback page could not load: ${error.description}';
+            });
+          },
         ),
       );
 
-    if (_loadedUrl != url) {
-      _loadedUrl = url;
-      _loading = true;
-      controller.loadRequest(Uri.parse(url));
+    if (controller.platform is AndroidWebViewController) {
+      final androidController = controller.platform as AndroidWebViewController;
+      unawaited(androidController.setMediaPlaybackRequiresUserGesture(false));
+      unawaited(
+        androidController.setMixedContentMode(MixedContentMode.alwaysAllow),
+      );
     }
 
     return controller;
+  }
+
+  Widget _webViewWidget(WebViewController controller) {
+    var params = PlatformWebViewWidgetCreationParams(
+      controller: controller.platform,
+    );
+
+    if (WebViewPlatform.instance is AndroidWebViewPlatform) {
+      params = AndroidWebViewWidgetCreationParams
+          .fromPlatformWebViewWidgetCreationParams(
+        params,
+        displayWithHybridComposition: true,
+      );
+    }
+
+    return WebViewWidget.fromPlatformCreationParams(params: params);
   }
 
   bool _shouldBlockNavigation(String nextUrl) {

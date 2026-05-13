@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../../core/navigation/app_routes.dart';
 import '../../core/responsive/responsive_layout.dart';
 import '../../models/media_item.dart';
 import '../../providers/catalog_providers.dart';
@@ -52,7 +54,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   void _maybeLoadMore() {
-    if (!_scrollController.hasClients || _debouncedQuery.trim().length < 2) return;
+    if (!_scrollController.hasClients || _debouncedQuery.trim().length < 2) {
+      return;
+    }
     if (_scrollController.position.extentAfter < 900) {
       ref.read(searchResultsProvider(_debouncedQuery).notifier).loadMore();
     }
@@ -64,6 +68,15 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     _debounce = Timer(const Duration(milliseconds: 360), () {
       if (!mounted) return;
       setState(() => _debouncedQuery = value.trim());
+    });
+  }
+
+  void _clearQuery() {
+    _debounce?.cancel();
+    _textController.clear();
+    setState(() {
+      _query = '';
+      _debouncedQuery = '';
     });
   }
 
@@ -91,41 +104,78 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.fromLTRB(padding, 22, padding, 10),
+                padding: EdgeInsets.fromLTRB(padding, 12, padding, 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Search',
-                      style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 18),
-                    TextField(
-                      controller: _textController,
-                      autofocus: true,
-                      onChanged: _onQueryChanged,
-                      onSubmitted: (value) {
-                        _debounce?.cancel();
-                        setState(() => _debouncedQuery = value.trim());
-                      },
-                      textInputAction: TextInputAction.search,
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(Icons.search_rounded),
-                        hintText: 'Search movies and TV shows',
-                        filled: true,
-                        fillColor: AppColors.surfaceRaised,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(6),
-                          borderSide: BorderSide.none,
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: () {
+                            if (context.canPop()) {
+                              context.pop();
+                            } else {
+                              context.go(AppRoutes.home);
+                            }
+                          },
+                          icon: const Icon(Icons.arrow_back_rounded),
+                          tooltip: 'Back',
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _FilterBar(
-                      selected: _filter,
-                      onChanged: (value) => setState(() => _filter = value),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _textController,
+                            autofocus: true,
+                            onChanged: _onQueryChanged,
+                            onSubmitted: (value) {
+                              _debounce?.cancel();
+                              setState(() => _debouncedQuery = value.trim());
+                            },
+                            textInputAction: TextInputAction.search,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                            decoration: InputDecoration(
+                              prefixIcon: const Icon(Icons.search_rounded),
+                              suffixIcon: _query.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      onPressed: _clearQuery,
+                                      icon: const Icon(Icons.close_rounded),
+                                      tooltip: 'Clear',
+                                    ),
+                              hintText: 'Search movies, shows, genres',
+                              filled: true,
+                              fillColor: AppColors.surfaceRaised,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 16,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                                borderSide: BorderSide.none,
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                                borderSide: const BorderSide(
+                                  color: AppColors.netflixRed,
+                                  width: 1.4,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 18),
+                    if (!showSuggestions) ...[
+                      _FilterBar(
+                        selected: _filter,
+                        onChanged: (value) => setState(() => _filter = value),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 180),
                       child: showSuggestions
@@ -137,7 +187,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                           : Text(
                               '${filteredItems.length} results',
                               key: const ValueKey('count'),
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.textMuted),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(color: AppColors.textMuted),
                             ),
                     ),
                   ],
@@ -151,22 +204,28 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                   child: Text(searchState.error.toString()),
                 ),
               )
-            else if (!showSuggestions && !searchState.isLoading && filteredItems.isEmpty)
+            else if (!showSuggestions &&
+                !searchState.isLoading &&
+                filteredItems.isEmpty)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.all(padding),
-                  child: Text(
-                    'No matches found.',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.textMuted),
+                  child: _EmptySearchState(
+                    query: _debouncedQuery,
+                    onClear: _clearQuery,
                   ),
                 ),
               )
             else
               MediaGrid(
                 items: filteredItems,
-                isLoading: !showSuggestions && searchState.isLoading && searchState.items.isEmpty,
+                isLoading: !showSuggestions &&
+                    searchState.isLoading &&
+                    searchState.items.isEmpty,
                 isLoadingMore: searchState.isLoadingMore,
-                onNearEnd: () => ref.read(searchResultsProvider(_debouncedQuery).notifier).loadMore(),
+                onNearEnd: () => ref
+                    .read(searchResultsProvider(_debouncedQuery).notifier)
+                    .loadMore(),
               ),
           ],
         ),
@@ -176,8 +235,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   List<MediaItem> _filterItems(List<MediaItem> items) {
     return switch (_filter) {
-      'movie' => items.where((item) => item.mediaType == 'movie').toList(growable: false),
-      'tv' => items.where((item) => item.mediaType == 'tv').toList(growable: false),
+      'movie' => items
+          .where((item) => item.mediaType == 'movie')
+          .toList(growable: false),
+      'tv' =>
+        items.where((item) => item.mediaType == 'tv').toList(growable: false),
       _ => items,
     };
   }
@@ -198,9 +260,21 @@ class _FilterBar extends StatelessWidget {
       spacing: 10,
       runSpacing: 10,
       children: [
-        _FilterButton(label: 'All', value: 'all', selected: selected == 'all', onChanged: onChanged),
-        _FilterButton(label: 'Movies', value: 'movie', selected: selected == 'movie', onChanged: onChanged),
-        _FilterButton(label: 'TV Shows', value: 'tv', selected: selected == 'tv', onChanged: onChanged),
+        _FilterButton(
+            label: 'All',
+            value: 'all',
+            selected: selected == 'all',
+            onChanged: onChanged),
+        _FilterButton(
+            label: 'Movies',
+            value: 'movie',
+            selected: selected == 'movie',
+            onChanged: onChanged),
+        _FilterButton(
+            label: 'TV Shows',
+            value: 'tv',
+            selected: selected == 'tv',
+            onChanged: onChanged),
       ],
     );
   }
@@ -227,7 +301,10 @@ class _FilterButton extends StatelessWidget {
       onSelected: (_) => onChanged(value),
       selectedColor: AppColors.netflixRed,
       backgroundColor: AppColors.surfaceRaised,
-      labelStyle: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
+      labelStyle: Theme.of(context)
+          .textTheme
+          .labelLarge
+          ?.copyWith(fontWeight: FontWeight.w800),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
     );
   }
@@ -245,9 +322,11 @@ class _SuggestionWrap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
     return Wrap(
       spacing: 10,
-      runSpacing: 10,
+      runSpacing: 12,
       children: [
         for (final suggestion in suggestions)
           ActionChip(
@@ -255,10 +334,68 @@ class _SuggestionWrap extends StatelessWidget {
             label: Text(suggestion),
             onPressed: () => onSelected(suggestion),
             backgroundColor: AppColors.surfaceRaised,
-            labelStyle: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            labelStyle: textTheme.labelLarge?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           ),
       ],
+    );
+  }
+}
+
+class _EmptySearchState extends StatelessWidget {
+  const _EmptySearchState({
+    required this.query,
+    required this.onClear,
+  });
+
+  final String query;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.manage_search_rounded,
+              color: AppColors.textMuted,
+              size: 46,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'No matches for "$query"',
+              textAlign: TextAlign.center,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Try a title, actor, genre, or a shorter search.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: onClear,
+              icon: const Icon(Icons.close_rounded),
+              label: const Text('Clear Search'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

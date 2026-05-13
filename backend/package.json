@@ -1,5 +1,5 @@
 {
-  "name": "movieapp-backend",
+  "name": "ocampoflix-backend",
   "version": "0.1.0",
   "private": true,
   "description": "Vercel-ready Express TMDB proxy for a Netflix-like Flutter TV app.",

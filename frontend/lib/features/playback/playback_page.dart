@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -239,7 +239,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
 
   void _scheduleControlsHide() {
     _controlsTimer?.cancel();
-    _controlsTimer = Timer(const Duration(seconds: 3), () {
+    _controlsTimer = Timer(const Duration(seconds: 5), () {
       if (!mounted || _loading) return;
       setState(() => _controlsVisible = false);
     });
@@ -301,17 +301,13 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   }
 
   bool _shouldBlockNavigation(String nextUrl) {
-    final current = _loadedUrl;
-    if (current == null || nextUrl == current) return false;
-
-    final currentUri = Uri.tryParse(current);
     final nextUri = Uri.tryParse(nextUrl);
-    if (currentUri == null || nextUri == null) return false;
+    if (nextUri == null) return false;
 
-    if (nextUri.scheme != 'http' && nextUri.scheme != 'https') return true;
-    return nextUri.host.isNotEmpty &&
-        currentUri.host.isNotEmpty &&
-        nextUri.host != currentUri.host;
+    return nextUri.scheme.isNotEmpty &&
+        nextUri.scheme != 'http' &&
+        nextUri.scheme != 'https' &&
+        nextUri.scheme != 'about';
   }
 
   void _showServerSheet(
@@ -328,65 +324,73 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
             .where((provider) => provider.id.isNotEmpty)
             .toList(growable: false);
 
+        final maxHeight = MediaQuery.sizeOf(context).height * 0.72;
+
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Servers',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 12),
-                if (visibleProviders.isEmpty)
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+              physics: const ClampingScrollPhysics(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    'No servers configured.',
+                    'Servers',
                     style: Theme.of(context)
                         .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: AppColors.textMuted),
-                  )
-                else
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      for (final provider in visibleProviders)
-                        ChoiceChip(
-                          label: Text(provider.configured
-                              ? (provider.name.isEmpty
-                                  ? provider.id
-                                  : provider.name)
-                              : '${provider.name.isEmpty ? provider.id : provider.name} (not configured)'),
-                          selected: provider.id == selectedProvider,
-                          selectedColor: AppColors.netflixRed,
-                          backgroundColor: AppColors.surfaceRaised,
-                          labelStyle:
-                              Theme.of(context).textTheme.labelLarge?.copyWith(
-                                    color: provider.configured
-                                        ? Colors.white
-                                        : AppColors.textMuted,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                          onSelected: provider.configured
-                              ? (_) {
-                                  Navigator.of(context).pop();
-                                  if (provider.id == selectedProvider) return;
-                                  setState(() {
-                                    _selectedProvider = provider.id;
-                                    _loadedUrl = null;
-                                  });
-                                }
-                              : null,
-                        ),
-                    ],
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900),
                   ),
-              ],
+                  const SizedBox(height: 12),
+                  if (visibleProviders.isEmpty)
+                    Text(
+                      'No servers configured.',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: AppColors.textMuted),
+                    )
+                  else
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        for (final provider in visibleProviders)
+                          ChoiceChip(
+                            label: Text(provider.configured
+                                ? (provider.name.isEmpty
+                                    ? provider.id
+                                    : provider.name)
+                                : '${provider.name.isEmpty ? provider.id : provider.name} (not configured)'),
+                            selected: provider.id == selectedProvider,
+                            selectedColor: AppColors.netflixRed,
+                            backgroundColor: AppColors.surfaceRaised,
+                            labelStyle: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(
+                                  color: provider.configured
+                                      ? Colors.white
+                                      : AppColors.textMuted,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                            onSelected: provider.configured
+                                ? (_) {
+                                    Navigator.of(context).pop();
+                                    if (provider.id == selectedProvider) return;
+                                    setState(() {
+                                      _selectedProvider = provider.id;
+                                      _loadedUrl = null;
+                                    });
+                                  }
+                                : null,
+                          ),
+                      ],
+                    ),
+                ],
+              ),
             ),
           ),
         );

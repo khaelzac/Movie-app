@@ -1,8 +1,9 @@
 class AppConstants {
   const AppConstants._();
 
-  static const appName = 'MovieApp';
-  static const backendBaseUrl = 'https://movie-app-gamma-sand-21.vercel.app/api';
+  static const appName = 'OCAMPOFLIX';
+  static const backendBaseUrl =
+      'https://movie-app-gamma-sand-21.vercel.app/api';
 
   static const connectTimeout = Duration(seconds: 8);
   static const receiveTimeout = Duration(seconds: 10);

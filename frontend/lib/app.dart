@@ -6,8 +6,8 @@ import 'core/navigation/tv_shortcuts.dart';
 import 'router/app_router.dart';
 import 'theme/app_theme.dart';
 
-class MovieApp extends ConsumerWidget {
-  const MovieApp({super.key});
+class OcampoFlixApp extends ConsumerWidget {
+  const OcampoFlixApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

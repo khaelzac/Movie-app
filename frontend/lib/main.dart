@@ -11,5 +11,5 @@ Future<void> main() async {
     ..maximumSize = 120
     ..maximumSizeBytes = 80 << 20;
 
-  runApp(const ProviderScope(child: MovieApp()));
+  runApp(const ProviderScope(child: OcampoFlixApp()));
 }

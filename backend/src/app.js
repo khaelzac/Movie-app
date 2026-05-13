@@ -24,7 +24,7 @@ app.use(morgan(env.isProduction ? 'tiny' : 'dev'));
 app.use(rateLimiter);
 
 app.get('/health', noStore, (_req, res) => {
-  res.json({ ok: true, service: 'movieapp-backend' });
+  res.json({ ok: true, service: 'ocampoflix-backend' });
 });
 
 app.use('/api', apiRoutes);

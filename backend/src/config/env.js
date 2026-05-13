@@ -61,9 +61,10 @@ const normalizeEmbedProvider = (provider) => {
   }
 
   if (host === 'vidsrc.cc') {
-    const baseUrl = provider.baseUrl.replace(/\/+$/, '').endsWith('/v2')
-      ? provider.baseUrl
-      : `${provider.baseUrl.replace(/\/+$/, '')}/v2`;
+    const trimmedBaseUrl = provider.baseUrl.replace(/\/+$/, '');
+    const baseUrl = /\/v[23]$/i.test(trimmedBaseUrl)
+      ? trimmedBaseUrl
+      : `${trimmedBaseUrl}/v2`;
     return {
       ...provider,
       baseUrl,

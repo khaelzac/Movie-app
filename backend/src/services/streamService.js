@@ -28,7 +28,8 @@ const resolverByProvider = {
   'env-6': vidsrcResolver,
   'env-7': vidsrcResolver,
   'env-8': nontongoResolver,
-  'env-9': vidsrcResolver
+  'env-9': vidsrcResolver,
+  'env-10': vidsrcResolver
 };
 
 const providerOrder = () => {

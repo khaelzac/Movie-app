@@ -17,7 +17,8 @@ const errorHandler = (err, req, res, _next) => {
       path: req.originalUrl,
       message,
       cause: err.cause?.message,
-      upstreamStatus: err.cause?.response?.status
+      upstreamStatus: err.cause?.response?.status,
+      upstreamUrl: err.cause?.config?.url
     });
   } else if (status >= 500) {
     console.error(err);

@@ -53,6 +53,8 @@ VIDSRC_BASE_URL=
 
 The stream endpoint uses `STREAM_PROVIDERS` to resolve direct HLS `.m3u8` streams from configured provider embeds, or falls back to `STREAM_PROVIDER` for a single provider. Keep playback providers backend-only.
 
+Most public provider docs describe iframe embed URLs, not direct HLS APIs. The native Flutter player needs a resolved `.m3u8`; if a provider only supports browser iframe playback or blocks server-side resolution, configure a provider/API that explicitly returns playable HLS for your authorized use case.
+
 Successful stream responses use this shape:
 
 ```json

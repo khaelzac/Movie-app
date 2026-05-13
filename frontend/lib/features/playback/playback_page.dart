@@ -120,7 +120,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
       id: widget.id,
       season: widget.season,
       episode: widget.episode,
-      provider: effectiveProvider.id,
+      provider: selectedProvider?.id,
     );
     final source = ref.watch(streamSourceProvider(request));
 
@@ -224,7 +224,15 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     }
 
     _disposePlayer();
-    _activeRequest = request;
+    _activeRequest = request.provider == null
+        ? StreamRequest(
+            mediaType: request.mediaType,
+            id: request.id,
+            season: request.season,
+            episode: request.episode,
+            provider: source.provider,
+          )
+        : request;
     _activeUrl = source.url;
     _retryCount = 0;
     _isPreparing = true;
@@ -461,13 +469,6 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
 
   StreamProviderInfo? _defaultPlaybackProvider(
       List<StreamProviderInfo> providers) {
-    const preferredProviderIds = ['env-8', 'env-2', 'env-1', 'env-9'];
-
-    for (final providerId in preferredProviderIds) {
-      final provider = _providerById(providers, providerId);
-      if (provider != null) return provider;
-    }
-
     return providers.isEmpty ? null : providers.first;
   }
 

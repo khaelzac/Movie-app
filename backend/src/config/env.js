@@ -52,7 +52,7 @@ const env = {
   rateLimitMax: Number(process.env.RATE_LIMIT_MAX || 120),
   requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS || 8000),
   streamProvider: process.env.STREAM_PROVIDER || 'disabled',
-  streamProviders: splitList(process.env.STREAM_PROVIDERS || process.env.STREAM_PROVIDER || ''),
+  streamProviders: splitList(process.env.STREAM_PROVIDERS || ''),
   videasyBaseUrl: process.env.VIDEASY_BASE_URL || '',
   vidsrcBaseUrl: process.env.VIDSRC_BASE_URL || '',
   customEmbedName: process.env.CUSTOM_EMBED_NAME || 'Custom',

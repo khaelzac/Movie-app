@@ -1,10 +1,9 @@
 import 'dart:async';
 
+import 'package:better_player/better_player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../models/media_details.dart';
@@ -37,13 +36,18 @@ class PlaybackPage extends ConsumerStatefulWidget {
 }
 
 class _PlaybackPageState extends ConsumerState<PlaybackPage> {
-  WebViewController? _controller;
-  bool _loading = true;
-  bool _controlsVisible = true;
-  String? _webViewError;
-  String? _loadedUrl;
+  BetterPlayerController? _playerController;
+  StreamRequest? _activeRequest;
+  String? _activeUrl;
   String? _selectedProvider;
+  String? _playbackError;
+  bool _isPreparing = true;
+  bool _isBuffering = false;
+  bool _controlsVisible = true;
+  int _retryCount = 0;
   Timer? _controlsTimer;
+
+  static const _maxRetriesPerProvider = 1;
 
   @override
   void initState() {
@@ -59,6 +63,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   @override
   void dispose() {
     _controlsTimer?.cancel();
+    _disposePlayer();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
@@ -78,14 +83,15 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     final selectedProvider = _selectedProvider == null
         ? null
         : _providerById(configuredProviders, _selectedProvider!);
-    final effectiveProvider = selectedProvider ??
-        (configuredProviders.isEmpty ? null : configuredProviders.first);
+    final effectiveProvider =
+        selectedProvider ?? _defaultPlaybackProvider(configuredProviders);
 
     if (providers.isLoading && providerOptions.isEmpty) {
       return const Scaffold(
         backgroundColor: Colors.black,
         body: Center(
-            child: CircularProgressIndicator(color: AppColors.netflixRed)),
+          child: CircularProgressIndicator(color: AppColors.netflixRed),
+        ),
       );
     }
 
@@ -103,28 +109,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                   : 'No configured playback servers were found. Add provider names and base URLs in the backend environment, then redeploy.',
               onRetry: () => ref.invalidate(streamProvidersProvider),
             ),
-            SafeArea(
-              child: Align(
-                alignment: Alignment.bottomLeft,
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: _ServerSwitcher(
-                    providers: providerOptions,
-                    selectedProvider: _selectedProvider ?? '',
-                    isLoading: providers.isLoading,
-                    errorMessage: providerOptions.isEmpty
-                        ? 'No servers configured.'
-                        : null,
-                    onSelected: (provider) {
-                      setState(() {
-                        _selectedProvider = provider;
-                        _loadedUrl = null;
-                      });
-                    },
-                  ),
-                ),
-              ),
-            ),
+            _bottomServerSwitcher(providerOptions, '', providers.isLoading),
           ],
         ),
       );
@@ -145,7 +130,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
         backgroundColor: Colors.black,
         body: source.when(
           data: (source) {
-            final controller = _loadSource(source.url);
+            final controller = _preparePlayer(source, request);
 
             return Stack(
               fit: StackFit.expand,
@@ -153,50 +138,28 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                 Listener(
                   behavior: HitTestBehavior.translucent,
                   onPointerDown: (_) => _showControlsTemporarily(),
-                  child: _webViewWidget(controller),
-                ),
-                if (_loading)
-                  const ColoredBox(
-                    color: Colors.black,
-                    child: Center(
-                        child: CircularProgressIndicator(
-                            color: AppColors.netflixRed)),
+                  child: Center(
+                    child: BetterPlayer(controller: controller),
                   ),
-                if (_webViewError != null)
+                ),
+                if (_isPreparing || _isBuffering)
+                  _LoadingOverlay(
+                    message: _isPreparing ? 'Loading stream...' : 'Buffering...',
+                  ),
+                if (_playbackError != null)
                   ColoredBox(
                     color: Colors.black,
                     child: _PlaybackError(
-                      message: _webViewError!,
-                      onRetry: () {
-                        setState(() => _webViewError = null);
-                        controller.reload();
-                      },
+                      message: _playbackError!,
+                      onRetry: () => _retryCurrentProvider(request),
                     ),
                   ),
-                if (_webViewError != null)
-                  SafeArea(
-                    child: Align(
-                      alignment: Alignment.bottomLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: _ServerSwitcher(
-                          providers: providerOptions,
-                          selectedProvider: effectiveProvider.id,
-                          isLoading: providers.isLoading,
-                          errorMessage: providers.hasError
-                              ? 'Server list could not be loaded.'
-                              : null,
-                          onSelected: (provider) {
-                            if (provider == effectiveProvider.id) return;
-                            setState(() {
-                              _selectedProvider = provider;
-                              _loadedUrl = null;
-                              _webViewError = null;
-                            });
-                          },
-                        ),
-                      ),
-                    ),
+                if (_playbackError != null)
+                  _bottomServerSwitcher(
+                    providerOptions,
+                    effectiveProvider.id,
+                    providers.isLoading,
+                    request: request,
                   ),
                 AnimatedOpacity(
                   opacity: _controlsVisible ? 1 : 0,
@@ -236,33 +199,218 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                 message: _friendlyPlaybackMessage(error),
                 onRetry: () => ref.invalidate(streamSourceProvider(request)),
               ),
-              SafeArea(
-                child: Align(
-                  alignment: Alignment.bottomLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: _ServerSwitcher(
-                      providers: providerOptions,
-                      selectedProvider: effectiveProvider.id,
-                      isLoading: providers.isLoading,
-                      errorMessage: providers.hasError
-                          ? 'Server list could not be loaded.'
-                          : null,
-                      onSelected: (provider) {
-                        if (provider == effectiveProvider.id) return;
-                        setState(() {
-                          _selectedProvider = provider;
-                          _loadedUrl = null;
-                        });
-                      },
-                    ),
-                  ),
-                ),
+              _bottomServerSwitcher(
+                providerOptions,
+                effectiveProvider.id,
+                providers.isLoading,
+                request: request,
               ),
             ],
           ),
           loading: () => const Center(
-              child: CircularProgressIndicator(color: AppColors.netflixRed)),
+            child: CircularProgressIndicator(color: AppColors.netflixRed),
+          ),
+        ),
+      ),
+    );
+  }
+
+  BetterPlayerController _preparePlayer(
+    StreamSource source,
+    StreamRequest request,
+  ) {
+    if (_activeUrl == source.url && _playerController != null) {
+      return _playerController!;
+    }
+
+    _disposePlayer();
+    _activeRequest = request;
+    _activeUrl = source.url;
+    _retryCount = 0;
+    _isPreparing = true;
+    _isBuffering = false;
+    _playbackError = null;
+
+    final dataSource = BetterPlayerDataSource(
+      BetterPlayerDataSourceType.network,
+      source.url,
+      videoFormat: BetterPlayerVideoFormat.hls,
+      headers: _headersFor(source),
+      subtitles: _subtitleSources(source),
+      cacheConfiguration: const BetterPlayerCacheConfiguration(
+        useCache: true,
+        preCacheSize: 10 * 1024 * 1024,
+        maxCacheSize: 100 * 1024 * 1024,
+        maxCacheFileSize: 30 * 1024 * 1024,
+      ),
+    );
+
+    final controller = BetterPlayerController(
+      BetterPlayerConfiguration(
+        autoPlay: true,
+        fit: BoxFit.contain,
+        aspectRatio: 16 / 9,
+        fullScreenByDefault: false,
+        autoDetectFullscreenDeviceOrientation: true,
+        autoDetectFullscreenAspectRatio: true,
+        allowedScreenSleep: false,
+        handleLifecycle: true,
+        controlsConfiguration: BetterPlayerControlsConfiguration(
+          enableFullscreen: true,
+          enablePlaybackSpeed: true,
+          enableSubtitles: source.subtitles.isNotEmpty,
+          enableQualities: true,
+          enableAudioTracks: true,
+          loadingColor: AppColors.netflixRed,
+          progressBarPlayedColor: AppColors.netflixRed,
+          progressBarHandleColor: AppColors.netflixRed,
+          controlBarColor: Colors.black.withValues(alpha: 0.72),
+          iconsColor: Colors.white,
+          textColor: Colors.white,
+        ),
+        errorBuilder: (context, errorMessage) => _PlaybackError(
+          message: _friendlyPlaybackMessage(errorMessage ?? 'Playback failed.'),
+          onRetry: () => _retryCurrentProvider(request),
+        ),
+      ),
+      betterPlayerDataSource: dataSource,
+    );
+
+    controller.addEventsListener(_onPlayerEvent);
+    _playerController = controller;
+    return controller;
+  }
+
+  Map<String, String> _headersFor(StreamSource source) {
+    final headers = <String, String>{
+      'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
+    };
+    if (source.referer.isNotEmpty) {
+      headers['Referer'] = source.referer;
+      final origin = Uri.tryParse(source.referer)?.origin;
+      if (origin != null) headers['Origin'] = origin;
+    }
+    return headers;
+  }
+
+  List<BetterPlayerSubtitlesSource> _subtitleSources(StreamSource source) {
+    return source.subtitles
+        .map((subtitle) => BetterPlayerSubtitlesSource(
+              type: BetterPlayerSubtitlesSourceType.network,
+              name: subtitle.label,
+              urls: [subtitle.url],
+            ))
+        .toList(growable: false);
+  }
+
+  void _onPlayerEvent(BetterPlayerEvent event) {
+    if (!mounted) return;
+
+    switch (event.betterPlayerEventType) {
+      case BetterPlayerEventType.initialized:
+        setState(() {
+          _isPreparing = false;
+          _isBuffering = false;
+          _playbackError = null;
+        });
+        _scheduleControlsHide();
+        break;
+      case BetterPlayerEventType.bufferingStart:
+        setState(() => _isBuffering = true);
+        break;
+      case BetterPlayerEventType.bufferingEnd:
+        setState(() => _isBuffering = false);
+        break;
+      case BetterPlayerEventType.exception:
+        _handlePlaybackFailure();
+        break;
+      default:
+        break;
+    }
+  }
+
+  void _handlePlaybackFailure() {
+    if (!mounted) return;
+
+    final request = _activeRequest;
+    if (request != null && _retryCount < _maxRetriesPerProvider) {
+      _retryCount += 1;
+      ref.invalidate(streamSourceProvider(request));
+      return;
+    }
+
+    final providers = ref.read(streamProvidersProvider).valueOrNull ??
+        const <StreamProviderInfo>[];
+    final configuredProviders = providers
+        .where((provider) => provider.configured)
+        .toList(growable: false);
+    final nextProvider = _nextProvider(configuredProviders);
+
+    if (nextProvider != null) {
+      setState(() {
+        _selectedProvider = nextProvider.id;
+        _activeUrl = null;
+        _playbackError = null;
+        _isPreparing = true;
+      });
+      return;
+    }
+
+    setState(() {
+      _isPreparing = false;
+      _isBuffering = false;
+      _playbackError =
+          'Native playback could not start this HLS stream. Try another server or check the backend stream resolver.';
+    });
+  }
+
+  void _retryCurrentProvider(StreamRequest request) {
+    setState(() {
+      _activeUrl = null;
+      _playbackError = null;
+      _isPreparing = true;
+      _isBuffering = false;
+    });
+    ref.invalidate(streamSourceProvider(request));
+  }
+
+  void _disposePlayer() {
+    final controller = _playerController;
+    if (controller == null) return;
+    controller.removeEventsListener(_onPlayerEvent);
+    controller.dispose();
+    _playerController = null;
+  }
+
+  Widget _bottomServerSwitcher(
+    List<StreamProviderInfo> providers,
+    String selectedProvider,
+    bool isLoading, {
+    StreamRequest? request,
+  }) {
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.bottomLeft,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: _ServerSwitcher(
+            providers: providers,
+            selectedProvider: selectedProvider,
+            isLoading: isLoading,
+            errorMessage: providers.isEmpty ? 'No servers configured.' : null,
+            onSelected: (provider) {
+              if (provider == selectedProvider) return;
+              setState(() {
+                _selectedProvider = provider;
+                _activeUrl = null;
+                _playbackError = null;
+                _isPreparing = true;
+              });
+              if (request != null) {
+                ref.invalidate(streamSourceProvider(request));
+              }
+            },
+          ),
         ),
       ),
     );
@@ -278,7 +426,9 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   void _scheduleControlsHide() {
     _controlsTimer?.cancel();
     _controlsTimer = Timer(const Duration(seconds: 5), () {
-      if (!mounted || _loading) return;
+      if (!mounted || _isPreparing || _isBuffering || _playbackError != null) {
+        return;
+      }
       setState(() => _controlsVisible = false);
     });
   }
@@ -294,7 +444,11 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
         raw.toLowerCase().contains('connection')) {
       return 'This server did not respond. Try another server.';
     }
-    return 'This server could not start playback. Try another server.';
+    if (raw.toLowerCase().contains('m3u8') ||
+        raw.toLowerCase().contains('hls')) {
+      return 'This server did not return a playable HLS stream. Try another server.';
+    }
+    return 'This server could not start native playback. Try another server.';
   }
 
   StreamProviderInfo? _providerById(
@@ -305,108 +459,29 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     return null;
   }
 
-  WebViewController _loadSource(String url) {
-    final controller = _controller ??= _createController();
+  StreamProviderInfo? _defaultPlaybackProvider(
+      List<StreamProviderInfo> providers) {
+    const preferredProviderIds = ['env-8', 'env-2', 'env-1', 'env-9'];
 
-    if (_loadedUrl != url) {
-      _loadedUrl = url;
-      _loading = true;
-      _webViewError = null;
-      controller.loadRequest(Uri.parse(url));
+    for (final providerId in preferredProviderIds) {
+      final provider = _providerById(providers, providerId);
+      if (provider != null) return provider;
     }
 
-    return controller;
+    return providers.isEmpty ? null : providers.first;
   }
 
-  WebViewController _createController() {
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.black)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onNavigationRequest: (request) {
-            if (_shouldBlockNavigation(request.url)) {
-              return NavigationDecision.prevent;
-            }
-            return NavigationDecision.navigate;
-          },
-          onPageStarted: (_) {
-            if (mounted) {
-              setState(() {
-                _loading = true;
-                _webViewError = null;
-              });
-            }
-          },
-          onPageFinished: (_) {
-            if (mounted) {
-              setState(() => _loading = false);
-              _scheduleControlsHide();
-            }
-          },
-          onWebResourceError: (error) {
-            if (error.isForMainFrame == false || !mounted) return;
-            setState(() {
-              _loading = false;
-              _webViewError = _friendlyWebViewMessage(error);
-            });
-          },
-        ),
-      );
+  StreamProviderInfo? _nextProvider(List<StreamProviderInfo> providers) {
+    if (providers.length < 2) return null;
 
-    if (controller.platform is AndroidWebViewController) {
-      final androidController = controller.platform as AndroidWebViewController;
-      unawaited(androidController.setMediaPlaybackRequiresUserGesture(false));
-      unawaited(
-        androidController.setMixedContentMode(MixedContentMode.alwaysAllow),
-      );
-    }
+    final currentId = _selectedProvider ?? _activeRequest?.provider;
+    final currentIndex =
+        providers.indexWhere((provider) => provider.id == currentId);
+    if (currentIndex < 0) return providers.first;
 
-    return controller;
-  }
-
-  Widget _webViewWidget(WebViewController controller) {
-    var params = PlatformWebViewWidgetCreationParams(
-      controller: controller.platform,
-    );
-
-    if (WebViewPlatform.instance is AndroidWebViewPlatform) {
-      params = AndroidWebViewWidgetCreationParams
-          .fromPlatformWebViewWidgetCreationParams(
-        params,
-        displayWithHybridComposition: true,
-      );
-    }
-
-    return WebViewWidget.fromPlatformCreationParams(params: params);
-  }
-
-  String _friendlyWebViewMessage(WebResourceError error) {
-    final description = error.description.trim();
-    final lowerDescription = description.toLowerCase();
-
-    if (lowerDescription.contains('connection_refused') ||
-        lowerDescription.contains('connection refused')) {
-      return 'This playback server refused the connection. Try another server, or update that server base URL and path pattern in the backend environment.';
-    }
-
-    if (lowerDescription.contains('host') ||
-        lowerDescription.contains('name_not_resolved') ||
-        lowerDescription.contains('not resolved')) {
-      return 'This playback server could not be reached. Try another server or check the backend provider URL.';
-    }
-
-    return 'The playback page could not load: $description';
-  }
-
-  bool _shouldBlockNavigation(String nextUrl) {
-    final nextUri = Uri.tryParse(nextUrl);
-    if (nextUri == null) return false;
-
-    return nextUri.scheme.isNotEmpty &&
-        nextUri.scheme != 'http' &&
-        nextUri.scheme != 'https' &&
-        nextUri.scheme != 'about';
+    final nextIndex = currentIndex + 1;
+    if (nextIndex >= providers.length) return null;
+    return providers[nextIndex];
   }
 
   void _showServerSheet(
@@ -478,10 +553,14 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                             onSelected: provider.configured
                                 ? (_) {
                                     Navigator.of(context).pop();
-                                    if (provider.id == selectedProvider) return;
+                                    if (provider.id == selectedProvider) {
+                                      return;
+                                    }
                                     setState(() {
                                       _selectedProvider = provider.id;
-                                      _loadedUrl = null;
+                                      _activeUrl = null;
+                                      _playbackError = null;
+                                      _isPreparing = true;
                                     });
                                   }
                                 : null,
@@ -498,10 +577,15 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   }
 
   Future<void> _saveProgress() async {
+    final position =
+        await _playerController?.videoPlayerController?.position;
+    final duration =
+        _playerController?.videoPlayerController?.value.duration;
+
     await ref.read(libraryControllerProvider.notifier).saveProgress(
           _detailsShell(),
-          positionSeconds: 420,
-          durationSeconds: 3600,
+          positionSeconds: position?.inSeconds ?? 0,
+          durationSeconds: duration?.inSeconds ?? 0,
           season: widget.season,
           episode: widget.episode,
         );
@@ -532,6 +616,35 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
       title: widget.title,
       posterUrl: widget.posterUrl,
       backdropUrl: widget.backdropUrl,
+    );
+  }
+}
+
+class _LoadingOverlay extends StatelessWidget {
+  const _LoadingOverlay({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black.withValues(alpha: 0.74),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: AppColors.netflixRed),
+            const SizedBox(height: 14),
+            Text(
+              message,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -589,7 +702,9 @@ class _ServerSwitcher extends StatelessWidget {
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.netflixRed),
+                    strokeWidth: 2,
+                    color: AppColors.netflixRed,
+                  ),
                 ),
               if (errorMessage != null && visibleProviders.isEmpty)
                 Padding(
@@ -709,8 +824,11 @@ class _PlaybackError extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded,
-                color: AppColors.netflixRed, size: 48),
+            const Icon(
+              Icons.error_outline_rounded,
+              color: AppColors.netflixRed,
+              size: 48,
+            ),
             const SizedBox(height: 14),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 18),

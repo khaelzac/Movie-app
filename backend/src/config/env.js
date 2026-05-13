@@ -51,6 +51,8 @@ const env = {
   rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60000),
   rateLimitMax: Number(process.env.RATE_LIMIT_MAX || 120),
   requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS || 8000),
+  streamResolveRetries: Number(process.env.STREAM_RESOLVE_RETRIES || 2),
+  streamProxyBaseUrl: process.env.STREAM_PROXY_BASE_URL || '',
   streamProvider: process.env.STREAM_PROVIDER || 'disabled',
   streamProviders: splitList(process.env.STREAM_PROVIDERS || ''),
   videasyBaseUrl: process.env.VIDEASY_BASE_URL || '',

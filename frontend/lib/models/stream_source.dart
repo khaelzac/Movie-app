@@ -2,14 +2,18 @@ class StreamSource {
   const StreamSource({
     required this.url,
     required this.provider,
-    required this.mediaType,
-    required this.tmdbId,
+    this.referer = '',
+    this.subtitles = const [],
+    this.mediaType = '',
+    this.tmdbId = 0,
     this.season,
     this.episode,
   });
 
   final String url;
   final String provider;
+  final String referer;
+  final List<StreamSubtitle> subtitles;
   final String mediaType;
   final int tmdbId;
   final int? season;
@@ -17,12 +21,42 @@ class StreamSource {
 
   factory StreamSource.fromJson(Map<String, dynamic> json) {
     return StreamSource(
-      url: (json['url'] ?? '') as String,
+      url: (json['streamUrl'] ?? json['url'] ?? '') as String,
       provider: (json['provider'] ?? '') as String,
+      referer: (json['referer'] ?? '') as String,
+      subtitles: (json['subtitles'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map(StreamSubtitle.fromJson)
+          .where((subtitle) => subtitle.url.isNotEmpty)
+          .toList(growable: false),
       mediaType: (json['mediaType'] ?? '') as String,
       tmdbId: (json['tmdbId'] as num?)?.toInt() ?? 0,
       season: (json['season'] as num?)?.toInt(),
       episode: (json['episode'] as num?)?.toInt(),
+    );
+  }
+}
+
+class StreamSubtitle {
+  const StreamSubtitle({
+    required this.url,
+    this.label = 'Subtitle',
+    this.language,
+    this.kind = 'subtitles',
+  });
+
+  final String url;
+  final String label;
+  final String? language;
+  final String kind;
+
+  factory StreamSubtitle.fromJson(Map<String, dynamic> json) {
+    final language = json['language'] as String?;
+    return StreamSubtitle(
+      url: (json['url'] ?? '') as String,
+      label: (json['label'] ?? language ?? 'Subtitle') as String,
+      language: language,
+      kind: (json['kind'] ?? 'subtitles') as String,
     );
   }
 }

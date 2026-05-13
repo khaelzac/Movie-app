@@ -22,6 +22,8 @@ STALE_CACHE_TTL_SECONDS=21600
 RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX=120
 REQUEST_TIMEOUT_MS=8000
+STREAM_RESOLVE_RETRIES=2
+STREAM_PROXY_BASE_URL=
 STREAM_PROVIDER=disabled
 STREAM_PROVIDERS=
 VIDEASY_BASE_URL=
@@ -49,12 +51,26 @@ VIDSRC_BASE_URL=
 
 ## Stream Providers
 
-The stream endpoint uses `STREAM_PROVIDERS` to expose multiple configured provider modules, or falls back to `STREAM_PROVIDER` for a single provider. Keep playback providers backend-only.
+The stream endpoint uses `STREAM_PROVIDERS` to resolve direct HLS `.m3u8` streams from configured provider embeds, or falls back to `STREAM_PROVIDER` for a single provider. Keep playback providers backend-only.
+
+Successful stream responses use this shape:
+
+```json
+{
+  "provider": "env-8",
+  "streamUrl": "https://cdn.example.com/master.m3u8",
+  "referer": "https://provider.example",
+  "subtitles": []
+}
+```
+
+Set `STREAM_PROXY_BASE_URL` to a worker/proxy endpoint if clients need proxied HLS URLs. The backend appends `url` and `referer` query parameters.
 
 Supported provider module names:
 
 - `videasy`
 - `vidsrc`
+- `env-1` through `env-N` from `AUTHORIZED_EMBED_PROVIDER_N_*`
 - `disabled`
 
 Configure only providers you are authorized to use.

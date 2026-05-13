@@ -42,4 +42,30 @@ const customEmbedProvider = {
   })
 };
 
-module.exports = { customEmbedProvider };
+const createCustomEmbedProvider = ({ id, name, baseUrl, moviePattern, tvPattern }) => ({
+  name: id,
+  label: name,
+  isConfigured: () => Boolean(baseUrl),
+  movie: (tmdbId) => ({
+    provider: id,
+    mediaType: 'movie',
+    tmdbId: positiveInt(tmdbId, 'tmdbId'),
+    url: buildUrl(baseUrl, moviePattern, {
+      tmdb_id: tmdbId
+    })
+  }),
+  tv: (tmdbId, season, episode) => ({
+    provider: id,
+    mediaType: 'tv',
+    tmdbId: positiveInt(tmdbId, 'tmdbId'),
+    season: positiveInt(season, 'season'),
+    episode: positiveInt(episode, 'episode'),
+    url: buildUrl(baseUrl, tvPattern, {
+      tmdb_id: tmdbId,
+      season,
+      episode
+    })
+  })
+});
+
+module.exports = { createCustomEmbedProvider, customEmbedProvider };

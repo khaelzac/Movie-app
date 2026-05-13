@@ -63,6 +63,10 @@ vercel env add CUSTOM_EMBED_NAME production
 vercel env add CUSTOM_EMBED_BASE_URL production
 vercel env add CUSTOM_EMBED_MOVIE_PATTERN production
 vercel env add CUSTOM_EMBED_TV_PATTERN production
+vercel env add AUTHORIZED_EMBED_PROVIDER_1_NAME production
+vercel env add AUTHORIZED_EMBED_PROVIDER_1_BASE_URL production
+vercel env add AUTHORIZED_EMBED_PROVIDER_1_MOVIE_PATTERN production
+vercel env add AUTHORIZED_EMBED_PROVIDER_1_TV_PATTERN production
 vercel env add VIDEASY_BASE_URL production
 vercel env add VIDSRC_BASE_URL production
 ```
@@ -83,9 +87,15 @@ CUSTOM_EMBED_NAME=
 CUSTOM_EMBED_BASE_URL=
 CUSTOM_EMBED_MOVIE_PATTERN=/movie/{tmdb_id}
 CUSTOM_EMBED_TV_PATTERN=/tv/{tmdb_id}/{season}/{episode}
+AUTHORIZED_EMBED_PROVIDER_1_NAME=
+AUTHORIZED_EMBED_PROVIDER_1_BASE_URL=
+AUTHORIZED_EMBED_PROVIDER_1_MOVIE_PATTERN=/movie/{tmdb_id}
+AUTHORIZED_EMBED_PROVIDER_1_TV_PATTERN=/tv/{tmdb_id}/{season}/{episode}
 VIDEASY_BASE_URL=
 VIDSRC_BASE_URL=
 ```
+
+Repeat the `AUTHORIZED_EMBED_PROVIDER_N_*` variables for each additional authorized playback server you want to show in the app.
 
 Deploy:
 

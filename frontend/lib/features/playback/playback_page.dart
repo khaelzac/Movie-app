@@ -61,15 +61,19 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
 
   @override
   Widget build(BuildContext context) {
+    final providers = ref.watch(streamProvidersProvider);
+    final providerOptions =
+        providers.valueOrNull ?? const <StreamProviderInfo>[];
+    final effectiveProvider = _selectedProvider ??
+        (providerOptions.isEmpty ? null : providerOptions.first.id);
     final request = StreamRequest(
       mediaType: widget.mediaType,
       id: widget.id,
       season: widget.season,
       episode: widget.episode,
-      provider: _selectedProvider,
+      provider: effectiveProvider,
     );
     final source = ref.watch(streamSourceProvider(request));
-    final providers = ref.watch(streamProvidersProvider);
 
     return PopScope(
       canPop: true,
@@ -145,10 +149,14 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                             ],
                         selectedProvider: source.provider,
                         isLoading: providers.isLoading,
+                        errorMessage: providers.hasError
+                            ? 'Server list could not be refreshed.'
+                            : null,
                         onSelected: (provider) {
                           if (provider == source.provider) return;
                           setState(() {
                             _selectedProvider = provider;
+                            _loadedUrl = null;
                           });
                         },
                       ),
@@ -158,12 +166,57 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
               ],
             );
           },
-          error: (error, _) => _PlaybackError(message: error.toString()),
+          error: (error, _) => Stack(
+            fit: StackFit.expand,
+            children: [
+              _PlaybackError(
+                message: _friendlyPlaybackMessage(error),
+                onRetry: () => ref.invalidate(streamSourceProvider(request)),
+              ),
+              SafeArea(
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: _ServerSwitcher(
+                      providers: providerOptions,
+                      selectedProvider: effectiveProvider ?? '',
+                      isLoading: providers.isLoading,
+                      errorMessage: providers.hasError
+                          ? 'Server list could not be loaded.'
+                          : null,
+                      onSelected: (provider) {
+                        if (provider == effectiveProvider) return;
+                        setState(() {
+                          _selectedProvider = provider;
+                          _loadedUrl = null;
+                        });
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
           loading: () => const Center(
               child: CircularProgressIndicator(color: AppColors.netflixRed)),
         ),
       ),
     );
+  }
+
+  String _friendlyPlaybackMessage(Object error) {
+    final raw = error.toString();
+    if (raw.contains('501') ||
+        raw.toLowerCase().contains('disabled or unsupported')) {
+      return 'This server is not configured for playback. Pick another server or update the backend environment variables.';
+    }
+    if (raw.toLowerCase().contains('socket') ||
+        raw.toLowerCase().contains('timeout') ||
+        raw.toLowerCase().contains('connection')) {
+      return 'This server did not respond. Try another server.';
+    }
+    return 'This server could not start playback. Try another server.';
   }
 
   WebViewController _loadSource(String url) {
@@ -234,12 +287,14 @@ class _ServerSwitcher extends StatelessWidget {
     required this.providers,
     required this.selectedProvider,
     required this.isLoading,
+    this.errorMessage,
     required this.onSelected,
   });
 
   final List<StreamProviderInfo> providers;
   final String selectedProvider;
   final bool isLoading;
+  final String? errorMessage;
   final ValueChanged<String> onSelected;
 
   @override
@@ -247,7 +302,9 @@ class _ServerSwitcher extends StatelessWidget {
     final visibleProviders = providers
         .where((provider) => provider.id.isNotEmpty)
         .toList(growable: false);
-    if (visibleProviders.isEmpty && !isLoading) return const SizedBox.shrink();
+    if (visibleProviders.isEmpty && !isLoading && errorMessage == null) {
+      return const SizedBox.shrink();
+    }
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -280,6 +337,18 @@ class _ServerSwitcher extends StatelessWidget {
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: AppColors.netflixRed),
                 ),
+              if (errorMessage != null && visibleProviders.isEmpty)
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                  child: Text(
+                    errorMessage!,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: AppColors.textMuted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ),
               for (final provider in visibleProviders)
                 ChoiceChip(
                   label:
@@ -304,9 +373,13 @@ class _ServerSwitcher extends StatelessWidget {
 }
 
 class _PlaybackError extends StatelessWidget {
-  const _PlaybackError({required this.message});
+  const _PlaybackError({
+    required this.message,
+    this.onRetry,
+  });
 
   final String message;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -321,10 +394,23 @@ class _PlaybackError extends StatelessWidget {
             const SizedBox(height: 14),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: () => Navigator.of(context).maybePop(),
-              icon: const Icon(Icons.arrow_back_rounded),
-              label: const Text('Back'),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              alignment: WrapAlignment.center,
+              children: [
+                if (onRetry != null)
+                  FilledButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Retry'),
+                  ),
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  label: const Text('Back'),
+                ),
+              ],
             ),
           ],
         ),

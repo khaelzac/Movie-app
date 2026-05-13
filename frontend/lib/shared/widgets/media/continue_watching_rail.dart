@@ -25,6 +25,7 @@ class ContinueWatchingRail extends StatelessWidget {
 
     final padding = ResponsiveLayout.horizontalPadding(context);
     final cardHeight = ResponsiveLayout.posterHeight(context);
+    final railHeight = cardHeight + 96;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 30),
@@ -36,12 +37,15 @@ class ContinueWatchingRail extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: padding),
               child: Text(
                 title,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: cardHeight + 68,
+              height: railHeight,
               child: ListView.separated(
                 padding: EdgeInsets.symmetric(horizontal: padding, vertical: 4),
                 scrollDirection: Axis.horizontal,
@@ -53,7 +57,8 @@ class ContinueWatchingRail extends StatelessWidget {
                   final progress = items[index];
                   return _ProgressCard(
                     progress: progress,
-                    onClear: onClear == null ? null : () => onClear?.call(progress),
+                    onClear:
+                        onClear == null ? null : () => onClear?.call(progress),
                   );
                 },
                 separatorBuilder: (_, __) => const SizedBox(width: 14),
@@ -83,6 +88,7 @@ class _ProgressCard extends StatelessWidget {
 
     return SizedBox(
       width: width,
+      height: ResponsiveLayout.posterHeight(context) + 88,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -102,42 +108,52 @@ class _ProgressCard extends StatelessWidget {
                   ),
                 );
               } else {
-                context.push(AppRoutes.playMovie(id, item.title, posterUrl: item.posterUrl, backdropUrl: item.backdropUrl));
+                context.push(AppRoutes.playMovie(id, item.title,
+                    posterUrl: item.posterUrl, backdropUrl: item.backdropUrl));
               }
             },
           ),
           const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              minHeight: 4,
-              value: progress.fraction,
-              backgroundColor: AppColors.surfaceRaised,
-              valueColor: const AlwaysStoppedAnimation(AppColors.netflixRed),
+          SizedBox(
+            height: 4,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                minHeight: 4,
+                value: progress.fraction,
+                backgroundColor: AppColors.surfaceRaised,
+                valueColor: const AlwaysStoppedAnimation(AppColors.netflixRed),
+              ),
             ),
           ),
           const SizedBox(height: 5),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  progress.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppColors.textMuted),
-                ),
-              ),
-              if (onClear != null)
-                SizedBox.square(
-                  dimension: 24,
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    tooltip: 'Remove',
-                    onPressed: onClear,
-                    icon: const Icon(Icons.close_rounded, size: 16),
+          SizedBox(
+            height: 28,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    progress.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: AppColors.textMuted),
                   ),
                 ),
-            ],
+                if (onClear != null)
+                  SizedBox.square(
+                    dimension: 28,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      tooltip: 'Remove',
+                      onPressed: onClear,
+                      icon: const Icon(Icons.close_rounded, size: 16),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ],
       ),

@@ -1,16 +1,28 @@
 const { env } = require('../config/env');
-const { customEmbedProvider } = require('../providers/customEmbedProvider');
+const { createCustomEmbedProvider, customEmbedProvider } = require('../providers/customEmbedProvider');
 const { videasyProvider } = require('../providers/videasyProvider');
 const { vidsrcProvider } = require('../providers/vidsrcProvider');
+
+const envProviders = Object.fromEntries(
+  env.authorizedEmbedProviders.map((provider) => [
+    provider.id,
+    createCustomEmbedProvider(provider)
+  ])
+);
 
 const providers = {
   custom: customEmbedProvider,
   videasy: videasyProvider,
-  vidsrc: vidsrcProvider
+  vidsrc: vidsrcProvider,
+  ...envProviders
 };
 
 const providerOrder = () => {
-  const requested = env.streamProviders.length > 0 ? env.streamProviders : Object.keys(providers);
+  const requested = env.streamProviders.length > 0
+    ? env.streamProviders
+    : env.streamProvider && env.streamProvider !== 'disabled'
+      ? [env.streamProvider]
+      : Object.keys(providers);
   return requested.filter((name) => name !== 'disabled');
 };
 

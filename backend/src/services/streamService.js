@@ -1,16 +1,32 @@
 const { env } = require('../config/env');
+const { customEmbedProvider } = require('../providers/customEmbedProvider');
 const { videasyProvider } = require('../providers/videasyProvider');
 const { vidsrcProvider } = require('../providers/vidsrcProvider');
 
 const providers = {
+  custom: customEmbedProvider,
   videasy: videasyProvider,
   vidsrc: vidsrcProvider
 };
 
-const activeProvider = () => {
-  const provider = providers[env.streamProvider];
+const providerOrder = () => {
+  const requested = env.streamProviders.length > 0 ? env.streamProviders : Object.keys(providers);
+  return requested.filter((name) => name !== 'disabled');
+};
+
+const configuredProviders = () => providerOrder()
+  .map((name) => providers[name])
+  .filter((provider) => provider && provider.isConfigured());
+
+const activeProvider = (providerName) => {
+  const enabled = configuredProviders();
+  const provider = providerName
+    ? enabled.find((item) => item.name === providerName)
+    : enabled[0];
   if (!provider) {
-    const error = new Error('Playback provider is disabled or unsupported.');
+    const error = new Error(providerName
+      ? `Playback provider "${providerName}" is disabled or unsupported.`
+      : 'Playback provider is disabled or unsupported.');
     error.status = 501;
     throw error;
   }
@@ -18,8 +34,12 @@ const activeProvider = () => {
 };
 
 const streamService = {
-  movie: (tmdbId) => activeProvider().movie(tmdbId),
-  tv: (tmdbId, season, episode) => activeProvider().tv(tmdbId, season, episode)
+  providers: () => configuredProviders().map((provider) => ({
+    id: provider.name,
+    name: provider.label || provider.name
+  })),
+  movie: (tmdbId, providerName) => activeProvider(providerName).movie(tmdbId),
+  tv: (tmdbId, season, episode, providerName) => activeProvider(providerName).tv(tmdbId, season, episode)
 };
 
 module.exports = { streamService };

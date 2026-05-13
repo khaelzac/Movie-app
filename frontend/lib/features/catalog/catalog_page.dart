@@ -39,7 +39,9 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
     if (!_scrollController.hasClients) return;
     if (_scrollController.position.extentAfter < 900) {
       final request = _activeRequest();
-      if (request != null) ref.read(catalogResultsProvider(request).notifier).loadMore();
+      if (request != null) {
+        ref.read(catalogResultsProvider(request).notifier).loadMore();
+      }
     }
   }
 
@@ -47,7 +49,8 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
     if (widget.type == 'genres') {
       final genreId = _selectedGenreId ?? fallbackGenre?.id;
       if (genreId == null) return null;
-      return CatalogRequest(type: 'genre', mediaType: _mediaType, genreId: genreId);
+      return CatalogRequest(
+          type: 'genre', mediaType: _mediaType, genreId: genreId);
     }
     if (widget.type == 'popular' && _mediaType == 'tv') {
       return const CatalogRequest(type: 'popular-tv', mediaType: 'tv');
@@ -66,9 +69,13 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
           data: (genreItems) {
             final fallbackGenre = genreItems.isEmpty ? null : genreItems.first;
             final request = _activeRequest(fallbackGenre);
-            final state = request == null ? const HomeRailState() : ref.watch(catalogResultsProvider(request));
+            final state = request == null
+                ? const HomeRailState()
+                : ref.watch(catalogResultsProvider(request));
             final title = widget.type == 'genres'
-                ? (_genreName(genreItems, _selectedGenreId ?? fallbackGenre?.id) ?? 'Genres')
+                ? (_genreName(
+                        genreItems, _selectedGenreId ?? fallbackGenre?.id) ??
+                    'Genres')
                 : _catalogTitle(request?.type ?? widget.type);
 
             return CustomScrollView(
@@ -83,7 +90,10 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
                       children: [
                         Text(
                           title,
-                          style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w900),
+                          style: Theme.of(context)
+                              .textTheme
+                              .displaySmall
+                              ?.copyWith(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 16),
                         _MediaTypeToggle(
@@ -100,7 +110,8 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
                           _GenreSelector(
                             genres: genreItems,
                             selectedId: _selectedGenreId ?? fallbackGenre?.id,
-                            onSelected: (genre) => setState(() => _selectedGenreId = genre.id),
+                            onSelected: (genre) =>
+                                setState(() => _selectedGenreId = genre.id),
                           ),
                         ],
                       ],
@@ -126,7 +137,9 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
                     items: state.items,
                     isLoading: state.isLoading && state.items.isEmpty,
                     isLoadingMore: state.isLoadingMore,
-                    onNearEnd: () => ref.read(catalogResultsProvider(request).notifier).loadMore(),
+                    onNearEnd: () => ref
+                        .read(catalogResultsProvider(request).notifier)
+                        .loadMore(),
                   ),
               ],
             );
@@ -139,7 +152,10 @@ class _CatalogPageState extends ConsumerState<CatalogPage> {
                   padding: EdgeInsets.fromLTRB(padding, 22, padding, 12),
                   child: Text(
                     _catalogTitle(widget.type),
-                    style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context)
+                        .textTheme
+                        .displaySmall
+                        ?.copyWith(fontWeight: FontWeight.w900),
                   ),
                 ),
               ),
@@ -183,16 +199,25 @@ class _MediaTypeToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     return SegmentedButton<String>(
       segments: const [
-        ButtonSegment(value: 'movie', label: Text('Movies'), icon: Icon(Icons.movie_rounded)),
-        ButtonSegment(value: 'tv', label: Text('TV Shows'), icon: Icon(Icons.live_tv_rounded)),
+        ButtonSegment(
+            value: 'movie',
+            label: Text('Movies'),
+            icon: Icon(Icons.movie_rounded)),
+        ButtonSegment(
+            value: 'tv',
+            label: Text('TV Shows'),
+            icon: Icon(Icons.live_tv_rounded)),
       ],
       selected: {selected},
       onSelectionChanged: (values) => onChanged(values.first),
       style: ButtonStyle(
-        backgroundColor: MaterialStateProperty.resolveWith(
-          (states) => states.contains(MaterialState.selected) ? AppColors.netflixRed : AppColors.surfaceRaised,
+        backgroundColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? AppColors.netflixRed
+              : AppColors.surfaceRaised,
         ),
-        shape: MaterialStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(6))),
+        shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(6))),
       ),
     );
   }
@@ -222,8 +247,12 @@ class _GenreSelector extends StatelessWidget {
             onSelected: (_) => onSelected(genre),
             selectedColor: AppColors.netflixRed,
             backgroundColor: AppColors.surfaceRaised,
-            labelStyle: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            labelStyle: Theme.of(context)
+                .textTheme
+                .labelLarge
+                ?.copyWith(fontWeight: FontWeight.w800),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           ),
       ],
     );

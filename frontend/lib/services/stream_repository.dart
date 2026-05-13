@@ -13,15 +13,28 @@ class StreamRepository {
 
   final ApiService _client;
 
-  Future<StreamSource> movie(int id) async {
-    return StreamSource.fromJson(await _client.get(ApiEndpoints.movieStream(id)));
+  Future<List<StreamProviderInfo>> providers() async {
+    final data = await _client.get(ApiEndpoints.streamProviders);
+    return (data['providers'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(StreamProviderInfo.fromJson)
+        .where((provider) => provider.id.isNotEmpty)
+        .toList(growable: false);
   }
 
-  Future<StreamSource> tv(int id, int season, int episode) async {
-    return StreamSource.fromJson(await _client.get(ApiEndpoints.tvStream(id, season, episode)));
+  Future<StreamSource> movie(int id, {String? provider}) async {
+    return StreamSource.fromJson(
+        await _client.get(ApiEndpoints.movieStream(id, provider: provider)));
+  }
+
+  Future<StreamSource> tv(int id, int season, int episode,
+      {String? provider}) async {
+    return StreamSource.fromJson(await _client
+        .get(ApiEndpoints.tvStream(id, season, episode, provider: provider)));
   }
 
   Future<TvSeason> tvSeason(int id, int season) async {
-    return TvSeason.fromJson(await _client.get(ApiEndpoints.tvSeason(id, season)));
+    return TvSeason.fromJson(
+        await _client.get(ApiEndpoints.tvSeason(id, season)));
   }
 }

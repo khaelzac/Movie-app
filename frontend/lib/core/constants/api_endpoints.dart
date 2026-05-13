@@ -6,12 +6,25 @@ class ApiEndpoints {
   static const popularTv = '/tv/popular';
   static const topRated = '/top-rated';
   static const search = '/search';
+  static const streamProviders = '/stream/providers';
 
   static String movieDetails(int id) => '/movie/$id';
   static String tvDetails(int id) => '/tv/$id';
   static String tvSeason(int id, int season) => '/tv/$id/season/$season';
-  static String movieStream(int id) => '/stream/movie/$id';
-  static String tvStream(int id, int season, int episode) => '/stream/tv/$id/$season/$episode';
+  static String movieStream(int id, {String? provider}) {
+    final query = provider == null || provider.isEmpty
+        ? ''
+        : '?provider=${Uri.encodeQueryComponent(provider)}';
+    return '/stream/movie/$id$query';
+  }
+
+  static String tvStream(int id, int season, int episode, {String? provider}) {
+    final query = provider == null || provider.isEmpty
+        ? ''
+        : '?provider=${Uri.encodeQueryComponent(provider)}';
+    return '/stream/tv/$id/$season/$episode$query';
+  }
+
   static String genre(String slug) => '/genres/$slug';
   static String recommendations(int id) => '/recommendations/$id';
   static String similar(int id) => '/similar/$id';

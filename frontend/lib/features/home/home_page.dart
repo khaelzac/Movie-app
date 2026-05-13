@@ -19,7 +19,8 @@ class HomePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final trending = ref.watch(homeRailProvider('trending'));
-    final progress = ref.watch(libraryControllerProvider.select((state) => state.progress));
+    final progress =
+        ref.watch(libraryControllerProvider.select((state) => state.progress));
     final hero = trending.items.isNotEmpty ? trending.items.first : null;
 
     return Scaffold(
@@ -39,13 +40,20 @@ class HomePage extends ConsumerWidget {
           SliverToBoxAdapter(
             child: ContinueWatchingRail(
               items: progress,
-              onClear: ref.read(libraryControllerProvider.notifier).clearProgress,
+              onClear:
+                  ref.read(libraryControllerProvider.notifier).clearProgress,
             ),
           ),
-          const SliverToBoxAdapter(child: _HomeRail(title: 'Trending', railKey: 'trending')),
-          const SliverToBoxAdapter(child: _HomeRail(title: 'Popular Movies', railKey: 'popularMovies')),
-          const SliverToBoxAdapter(child: _HomeRail(title: 'Popular TV Shows', railKey: 'popularTv')),
-          const SliverToBoxAdapter(child: _HomeRail(title: 'Top Rated', railKey: 'topRated')),
+          const SliverToBoxAdapter(
+              child: _HomeRail(title: 'Trending', railKey: 'trending')),
+          const SliverToBoxAdapter(
+              child:
+                  _HomeRail(title: 'Popular Movies', railKey: 'popularMovies')),
+          const SliverToBoxAdapter(
+              child:
+                  _HomeRail(title: 'Popular TV Shows', railKey: 'popularTv')),
+          const SliverToBoxAdapter(
+              child: _HomeRail(title: 'Top Rated', railKey: 'topRated')),
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
@@ -56,13 +64,17 @@ class HomePage extends ConsumerWidget {
               ),
               child: Text(
                 'Genres',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w900),
               ),
             ),
           ),
           for (final slug in homeGenreSlugs)
             SliverToBoxAdapter(
-              child: _HomeRail(title: homeGenreTitle(slug), railKey: 'genre:$slug'),
+              child: _HomeRail(
+                  title: homeGenreTitle(slug), railKey: 'genre:$slug'),
             ),
           const SliverToBoxAdapter(child: SizedBox(height: 48)),
         ],
@@ -72,7 +84,8 @@ class HomePage extends ConsumerWidget {
 
   static void _openDetails(BuildContext context, MediaItem item) {
     final id = item.id.toString();
-    context.push(item.mediaType == 'tv' ? AppRoutes.tv(id) : AppRoutes.movie(id));
+    context
+        .push(item.mediaType == 'tv' ? AppRoutes.tv(id) : AppRoutes.movie(id));
   }
 }
 
@@ -103,7 +116,7 @@ class _HeroBannerSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isTv = ResponsiveLayout.isTv(context);
-    final height = MediaQuery.sizeOf(context).height * (isTv ? 0.72 : 0.58);
+    final height = ResponsiveLayout.homeHeroHeight(context);
 
     return SizedBox(
       height: height,
@@ -124,30 +137,41 @@ class _HeroBannerSkeleton extends StatelessWidget {
           Padding(
             padding: EdgeInsets.fromLTRB(
               ResponsiveLayout.horizontalPadding(context),
-              isTv ? 70 : 48,
+              isTv ? 70 : 38,
               ResponsiveLayout.horizontalPadding(context),
-              42,
+              34,
             ),
             child: Align(
               alignment: Alignment.bottomLeft,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ShimmerBox(width: isTv ? 520 : 280, height: 58, borderRadius: 6),
-                  const SizedBox(height: 16),
-                  ShimmerBox(width: isTv ? 620 : 320, height: 18, borderRadius: 4),
-                  const SizedBox(height: 8),
-                  ShimmerBox(width: isTv ? 500 : 260, height: 18, borderRadius: 4),
-                  const SizedBox(height: 22),
-                  Row(
-                    children: const [
-                      ShimmerBox(width: 112, height: 44, borderRadius: 6),
-                      SizedBox(width: 12),
-                      ShimmerBox(width: 148, height: 44, borderRadius: 6),
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: ConstrainedBox(
+                  constraints:
+                      BoxConstraints(maxWidth: isTv ? 680 : double.infinity),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ShimmerBox(
+                          width: isTv ? 520 : 280, height: 58, borderRadius: 6),
+                      const SizedBox(height: 16),
+                      ShimmerBox(
+                          width: isTv ? 620 : 320, height: 18, borderRadius: 4),
+                      const SizedBox(height: 8),
+                      ShimmerBox(
+                          width: isTv ? 500 : 260, height: 18, borderRadius: 4),
+                      const SizedBox(height: 22),
+                      const Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          ShimmerBox(width: 112, height: 44, borderRadius: 6),
+                          ShimmerBox(width: 148, height: 44, borderRadius: 6),
+                        ],
+                      ),
                     ],
                   ),
-                ],
+                ),
               ),
             ),
           ),

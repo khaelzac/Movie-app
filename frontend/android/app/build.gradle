@@ -23,7 +23,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.movieapp.tv"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -37,8 +37,8 @@ android {
 
     defaultConfig {
         applicationId = "com.movieapp.tv"
-        minSdk = 23
-        targetSdk = 35
+        minSdk = 28
+        targetSdk = 36
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
         multiDexEnabled = false

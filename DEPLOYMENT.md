@@ -58,6 +58,11 @@ vercel env add RATE_LIMIT_WINDOW_MS production
 vercel env add RATE_LIMIT_MAX production
 vercel env add REQUEST_TIMEOUT_MS production
 vercel env add STREAM_PROVIDER production
+vercel env add STREAM_PROVIDERS production
+vercel env add CUSTOM_EMBED_NAME production
+vercel env add CUSTOM_EMBED_BASE_URL production
+vercel env add CUSTOM_EMBED_MOVIE_PATTERN production
+vercel env add CUSTOM_EMBED_TV_PATTERN production
 vercel env add VIDEASY_BASE_URL production
 vercel env add VIDSRC_BASE_URL production
 ```
@@ -73,6 +78,11 @@ RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX=120
 REQUEST_TIMEOUT_MS=8000
 STREAM_PROVIDER=disabled
+STREAM_PROVIDERS=
+CUSTOM_EMBED_NAME=
+CUSTOM_EMBED_BASE_URL=
+CUSTOM_EMBED_MOVIE_PATTERN=/movie/{tmdb_id}
+CUSTOM_EMBED_TV_PATTERN=/tv/{tmdb_id}/{season}/{episode}
 VIDEASY_BASE_URL=
 VIDSRC_BASE_URL=
 ```

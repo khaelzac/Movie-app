@@ -3,6 +3,8 @@ const { joinUrl, positiveInt } = require('./providerUtils');
 
 const videasyProvider = {
   name: 'videasy',
+  label: 'Videasy',
+  isConfigured: () => Boolean(env.videasyBaseUrl),
   movie: (tmdbId) => ({
     provider: 'videasy',
     mediaType: 'movie',

@@ -5,6 +5,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../models/media_details.dart';
+import '../../models/stream_source.dart';
 import '../../providers/catalog_providers.dart';
 import '../../services/local_library_repository.dart';
 
@@ -35,6 +36,8 @@ class PlaybackPage extends ConsumerStatefulWidget {
 class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   WebViewController? _controller;
   bool _loading = true;
+  String? _loadedUrl;
+  String? _selectedProvider;
 
   @override
   void initState() {
@@ -63,8 +66,10 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
       id: widget.id,
       season: widget.season,
       episode: widget.episode,
+      provider: _selectedProvider,
     );
     final source = ref.watch(streamSourceProvider(request));
+    final providers = ref.watch(streamProvidersProvider);
 
     return PopScope(
       canPop: true,
@@ -72,25 +77,18 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
         backgroundColor: Colors.black,
         body: source.when(
           data: (source) {
-            _controller ??= WebViewController()
-              ..setJavaScriptMode(JavaScriptMode.unrestricted)
-              ..setBackgroundColor(Colors.black)
-              ..setNavigationDelegate(
-                NavigationDelegate(
-                  onPageStarted: (_) => setState(() => _loading = true),
-                  onPageFinished: (_) => setState(() => _loading = false),
-                ),
-              )
-              ..loadRequest(Uri.parse(source.url));
+            final controller = _loadSource(source.url);
 
             return Stack(
               fit: StackFit.expand,
               children: [
-                WebViewWidget(controller: _controller!),
+                WebViewWidget(controller: controller),
                 if (_loading)
                   const ColoredBox(
                     color: Colors.black,
-                    child: Center(child: CircularProgressIndicator(color: AppColors.netflixRed)),
+                    child: Center(
+                        child: CircularProgressIndicator(
+                            color: AppColors.netflixRed)),
                   ),
                 SafeArea(
                   child: Align(
@@ -112,7 +110,8 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                               icon: const Icon(Icons.bookmark_rounded),
                               label: const Text('Save Progress'),
                               style: FilledButton.styleFrom(
-                                backgroundColor: Colors.black.withValues(alpha: 0.62),
+                                backgroundColor:
+                                    Colors.black.withValues(alpha: 0.62),
                                 foregroundColor: Colors.white,
                               ),
                             ),
@@ -122,7 +121,8 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                                 icon: const Icon(Icons.skip_next_rounded),
                                 label: const Text('Next Episode'),
                                 style: FilledButton.styleFrom(
-                                  backgroundColor: Colors.black.withValues(alpha: 0.62),
+                                  backgroundColor:
+                                      Colors.black.withValues(alpha: 0.62),
                                   foregroundColor: Colors.white,
                                 ),
                               ),
@@ -132,14 +132,62 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                     ),
                   ),
                 ),
+                SafeArea(
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: _ServerSwitcher(
+                        providers: providers.valueOrNull ??
+                            [
+                              StreamProviderInfo(
+                                  id: source.provider, name: source.provider)
+                            ],
+                        selectedProvider: source.provider,
+                        isLoading: providers.isLoading,
+                        onSelected: (provider) {
+                          if (provider == source.provider) return;
+                          setState(() {
+                            _selectedProvider = provider;
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                ),
               ],
             );
           },
           error: (error, _) => _PlaybackError(message: error.toString()),
-          loading: () => const Center(child: CircularProgressIndicator(color: AppColors.netflixRed)),
+          loading: () => const Center(
+              child: CircularProgressIndicator(color: AppColors.netflixRed)),
         ),
       ),
     );
+  }
+
+  WebViewController _loadSource(String url) {
+    final controller = _controller ??= WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.black)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (_) {
+            if (mounted) setState(() => _loading = true);
+          },
+          onPageFinished: (_) {
+            if (mounted) setState(() => _loading = false);
+          },
+        ),
+      );
+
+    if (_loadedUrl != url) {
+      _loadedUrl = url;
+      _loading = true;
+      controller.loadRequest(Uri.parse(url));
+    }
+
+    return controller;
   }
 
   Future<void> _saveProgress() async {
@@ -181,6 +229,80 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   }
 }
 
+class _ServerSwitcher extends StatelessWidget {
+  const _ServerSwitcher({
+    required this.providers,
+    required this.selectedProvider,
+    required this.isLoading,
+    required this.onSelected,
+  });
+
+  final List<StreamProviderInfo> providers;
+  final String selectedProvider;
+  final bool isLoading;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleProviders = providers
+        .where((provider) => provider.id.isNotEmpty)
+        .toList(growable: false);
+    if (visibleProviders.isEmpty && !isLoading) return const SizedBox.shrink();
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.64),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: FocusTraversalGroup(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                child: Text(
+                  'Servers',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ),
+              if (isLoading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: AppColors.netflixRed),
+                ),
+              for (final provider in visibleProviders)
+                ChoiceChip(
+                  label:
+                      Text(provider.name.isEmpty ? provider.id : provider.name),
+                  selected: provider.id == selectedProvider,
+                  selectedColor: AppColors.netflixRed,
+                  backgroundColor:
+                      AppColors.surfaceRaised.withValues(alpha: 0.92),
+                  labelStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                  onSelected: (_) => onSelected(provider.id),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PlaybackError extends StatelessWidget {
   const _PlaybackError({required this.message});
 
@@ -194,7 +316,8 @@ class _PlaybackError extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded, color: AppColors.netflixRed, size: 48),
+            const Icon(Icons.error_outline_rounded,
+                color: AppColors.netflixRed, size: 48),
             const SizedBox(height: 14),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 18),

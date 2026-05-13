@@ -27,16 +27,19 @@ final topRatedProvider = FutureProvider<List<MediaItem>>((ref) {
   return ref.watch(catalogRepositoryProvider).topRated();
 });
 
-final genreRailProvider = FutureProvider.family<List<MediaItem>, String>((ref, slug) {
+final genreRailProvider =
+    FutureProvider.family<List<MediaItem>, String>((ref, slug) {
   return ref.watch(catalogRepositoryProvider).genre(slug);
 });
 
-final searchProvider = FutureProvider.family<List<MediaItem>, String>((ref, query) {
+final searchProvider =
+    FutureProvider.family<List<MediaItem>, String>((ref, query) {
   if (query.trim().length < 2) return const [];
   return ref.watch(catalogRepositoryProvider).search(query.trim());
 });
 
-final movieDetailsProvider = FutureProvider.family<MediaDetails, int>((ref, id) {
+final movieDetailsProvider =
+    FutureProvider.family<MediaDetails, int>((ref, id) {
   return ref.watch(catalogRepositoryProvider).movieDetails(id);
 });
 
@@ -44,23 +47,35 @@ final tvDetailsProvider = FutureProvider.family<MediaDetails, int>((ref, id) {
   return ref.watch(catalogRepositoryProvider).tvDetails(id);
 });
 
-final tvSeasonProvider = FutureProvider.family<TvSeason, TvSeasonRequest>((ref, request) {
-  return ref.watch(streamRepositoryProvider).tvSeason(request.id, request.season);
+final tvSeasonProvider =
+    FutureProvider.family<TvSeason, TvSeasonRequest>((ref, request) {
+  return ref
+      .watch(streamRepositoryProvider)
+      .tvSeason(request.id, request.season);
 });
 
-final streamSourceProvider = FutureProvider.family<StreamSource, StreamRequest>((ref, request) {
+final streamProvidersProvider = FutureProvider<List<StreamProviderInfo>>((ref) {
+  return ref.watch(streamRepositoryProvider).providers();
+});
+
+final streamSourceProvider =
+    FutureProvider.family<StreamSource, StreamRequest>((ref, request) {
   final repository = ref.watch(streamRepositoryProvider);
   if (request.mediaType == 'tv') {
-    return repository.tv(request.id, request.season ?? 1, request.episode ?? 1);
+    return repository.tv(request.id, request.season ?? 1, request.episode ?? 1,
+        provider: request.provider);
   }
-  return repository.movie(request.id);
+  return repository.movie(request.id, provider: request.provider);
 });
 
-final genresProvider = FutureProvider.family<List<Genre>, String>((ref, mediaType) {
+final genresProvider =
+    FutureProvider.family<List<Genre>, String>((ref, mediaType) {
   return ref.watch(catalogRepositoryProvider).genres(mediaType: mediaType);
 });
 
-final searchResultsProvider = StateNotifierProvider.family<PagedMediaController, HomeRailState, String>((ref, query) {
+final searchResultsProvider =
+    StateNotifierProvider.family<PagedMediaController, HomeRailState, String>(
+        (ref, query) {
   return PagedMediaController(
     repository: ref.watch(catalogRepositoryProvider),
     loader: (repository, page) {
@@ -71,23 +86,30 @@ final searchResultsProvider = StateNotifierProvider.family<PagedMediaController,
   )..loadInitial();
 });
 
-final catalogResultsProvider =
-    StateNotifierProvider.family<PagedMediaController, HomeRailState, CatalogRequest>((ref, request) {
+final catalogResultsProvider = StateNotifierProvider.family<
+    PagedMediaController, HomeRailState, CatalogRequest>((ref, request) {
   return PagedMediaController(
     repository: ref.watch(catalogRepositoryProvider),
     loader: (repository, page) => switch (request.type) {
-      'trending' => repository.trending(mediaType: request.mediaType, page: page),
+      'trending' =>
+        repository.trending(mediaType: request.mediaType, page: page),
       'popular' => repository.popularMovies(page: page),
       'popular-tv' => repository.popularTv(page: page),
-      'top-rated' => repository.topRated(mediaType: request.mediaType, page: page),
-      'recommendations' => repository.recommendations(request.id ?? 0, mediaType: request.mediaType, page: page),
-      'similar' => repository.similar(request.id ?? 0, mediaType: request.mediaType, page: page),
-      _ => repository.genre(request.genreId?.toString() ?? request.type, mediaType: request.mediaType, page: page),
+      'top-rated' =>
+        repository.topRated(mediaType: request.mediaType, page: page),
+      'recommendations' => repository.recommendations(request.id ?? 0,
+          mediaType: request.mediaType, page: page),
+      'similar' => repository.similar(request.id ?? 0,
+          mediaType: request.mediaType, page: page),
+      _ => repository.genre(request.genreId?.toString() ?? request.type,
+          mediaType: request.mediaType, page: page),
     },
   )..loadInitial();
 });
 
-final homeRailProvider = StateNotifierProvider.family<HomeRailController, HomeRailState, String>((ref, key) {
+final homeRailProvider =
+    StateNotifierProvider.family<HomeRailController, HomeRailState, String>(
+        (ref, key) {
   return HomeRailController(
     repository: ref.watch(catalogRepositoryProvider),
     loader: _homeRailLoaders[key] ?? _homeRailLoaders['trending']!,
@@ -111,7 +133,8 @@ final Map<String, MediaPageLoader> _homeRailLoaders = {
   'popularMovies': (repository, page) => repository.popularMovies(page: page),
   'popularTv': (repository, page) => repository.popularTv(page: page),
   'topRated': (repository, page) => repository.topRated(page: page),
-  for (final slug in homeGenreSlugs) 'genre:$slug': (repository, page) => repository.genre(slug, page: page),
+  for (final slug in homeGenreSlugs)
+    'genre:$slug': (repository, page) => repository.genre(slug, page: page),
 };
 
 class CatalogRequest {
@@ -147,7 +170,8 @@ class TvSeasonRequest {
   final int season;
 
   @override
-  bool operator ==(Object other) => other is TvSeasonRequest && other.id == id && other.season == season;
+  bool operator ==(Object other) =>
+      other is TvSeasonRequest && other.id == id && other.season == season;
 
   @override
   int get hashCode => Object.hash(id, season);
@@ -159,12 +183,14 @@ class StreamRequest {
     required this.id,
     this.season,
     this.episode,
+    this.provider,
   });
 
   final String mediaType;
   final int id;
   final int? season;
   final int? episode;
+  final String? provider;
 
   @override
   bool operator ==(Object other) {
@@ -172,11 +198,12 @@ class StreamRequest {
         other.mediaType == mediaType &&
         other.id == id &&
         other.season == season &&
-        other.episode == episode;
+        other.episode == episode &&
+        other.provider == provider;
   }
 
   @override
-  int get hashCode => Object.hash(mediaType, id, season, episode);
+  int get hashCode => Object.hash(mediaType, id, season, episode, provider);
 }
 
 class HomeRailState {

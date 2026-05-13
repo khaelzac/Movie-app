@@ -27,6 +27,23 @@ class StreamSource {
   }
 }
 
+class StreamProviderInfo {
+  const StreamProviderInfo({
+    required this.id,
+    required this.name,
+  });
+
+  final String id;
+  final String name;
+
+  factory StreamProviderInfo.fromJson(Map<String, dynamic> json) {
+    return StreamProviderInfo(
+      id: (json['id'] ?? '') as String,
+      name: (json['name'] ?? '') as String,
+    );
+  }
+}
+
 class TvSeason {
   const TvSeason({
     required this.seasonNumber,

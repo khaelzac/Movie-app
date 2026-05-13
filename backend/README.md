@@ -23,6 +23,7 @@ RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX=120
 REQUEST_TIMEOUT_MS=8000
 STREAM_PROVIDER=disabled
+STREAM_PROVIDERS=
 VIDEASY_BASE_URL=
 VIDSRC_BASE_URL=
 ```
@@ -40,12 +41,15 @@ VIDSRC_BASE_URL=
 - `GET /api/genres?mediaType=movie`
 - `GET /api/recommendations/:id?mediaType=movie&page=1`
 - `GET /api/similar/:id?mediaType=movie&page=1`
+- `GET /api/stream/providers`
 - `GET /api/stream/movie/:tmdbId`
+- `GET /api/stream/movie/:tmdbId?provider=videasy`
 - `GET /api/stream/tv/:tmdbId/:season/:episode`
+- `GET /api/stream/tv/:tmdbId/:season/:episode?provider=vidsrc`
 
 ## Stream Providers
 
-The stream endpoint uses `STREAM_PROVIDER` to select a backend provider module. Keep playback providers backend-only.
+The stream endpoint uses `STREAM_PROVIDERS` to expose multiple configured provider modules, or falls back to `STREAM_PROVIDER` for a single provider. Keep playback providers backend-only.
 
 Supported provider module names:
 

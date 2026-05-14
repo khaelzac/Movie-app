@@ -51,8 +51,6 @@ const appendQueryParams = (url, queryString) => {
 };
 
 const providerEnvKey = (id) => id.toUpperCase().replace(/[^A-Z0-9]/g, '_');
-const forcedEnabledProviderIds = new Set(['env-11', 'env-12', 'env-13']);
-
 const validateBaseUrl = (baseUrl) => {
   if (!baseUrl) return '';
 
@@ -81,10 +79,8 @@ const providerHealthScore = (id) => numberValue(
 );
 
 const providerEnabled = (id, index) => boolValue(
-  forcedEnabledProviderIds.has(id)
-    ? 'true'
-    : envValue(`EMBED_PROVIDER_${providerEnvKey(id)}_ENABLED`,
-      index ? envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_ENABLED`, 'true') : 'true'),
+  envValue(`EMBED_PROVIDER_${providerEnvKey(id)}_ENABLED`,
+    index ? envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_ENABLED`, 'true') : 'true'),
   true
 );
 
@@ -177,10 +173,14 @@ const defaultProviders = [
   providerConfig({
     id: 'env-7',
     index: 7,
-    name: envValue('AUTHORIZED_EMBED_PROVIDER_7_NAME', 'vsrc.su'),
-    baseUrl: envValue('AUTHORIZED_EMBED_PROVIDER_7_BASE_URL', 'https://vsrc.su'),
-    moviePattern: envValue('AUTHORIZED_EMBED_PROVIDER_7_MOVIE_PATTERN', '/embed/tmdb/{tmdb_id}'),
-    tvPattern: envValue('AUTHORIZED_EMBED_PROVIDER_7_TV_PATTERN', '/embed/tmdb/{tmdb_id}/{season}/{episode}')
+    name: envValue('AUTHORIZED_EMBED_PROVIDER_7_NAME', 'VidSrc.su'),
+    baseUrl: envValue('AUTHORIZED_EMBED_PROVIDER_7_BASE_URL', 'https://vidsrc.su'),
+    moviePattern: envValue('AUTHORIZED_EMBED_PROVIDER_7_MOVIE_PATTERN', '/movie/{tmdb_id}'),
+    tvPattern: envValue('AUTHORIZED_EMBED_PROVIDER_7_TV_PATTERN', '/tv/{tmdb_id}/{season}/{episode}'),
+    queryParams: envValue(
+      'AUTHORIZED_EMBED_PROVIDER_7_QUERY_PARAMS',
+      'autoplay=true&colour=00ff9d&autonextepisode=true&pausescreen=true&idlecheck=0'
+    )
   }),
   providerConfig({
     id: 'env-8',
@@ -205,30 +205,6 @@ const defaultProviders = [
     baseUrl: envValue('AUTHORIZED_EMBED_PROVIDER_10_BASE_URL', 'https://vidsrc.cc/v3'),
     moviePattern: envValue('AUTHORIZED_EMBED_PROVIDER_10_MOVIE_PATTERN', '/embed/movie/{tmdb_id}'),
     tvPattern: envValue('AUTHORIZED_EMBED_PROVIDER_10_TV_PATTERN', '/embed/tv/{tmdb_id}/{season}/{episode}')
-  }),
-  providerConfig({
-    id: 'env-11',
-    index: 11,
-    name: envValue('AUTHORIZED_EMBED_PROVIDER_11_NAME', 'FileMoon'),
-    baseUrl: envValue('AUTHORIZED_EMBED_PROVIDER_11_BASE_URL', 'https://filemoon.sx'),
-    moviePattern: envValue('AUTHORIZED_EMBED_PROVIDER_11_MOVIE_PATTERN', '/e/{tmdb_id}'),
-    tvPattern: envValue('AUTHORIZED_EMBED_PROVIDER_11_TV_PATTERN', '/e/{tmdb_id}-{season}-{episode}')
-  }),
-  providerConfig({
-    id: 'env-12',
-    index: 12,
-    name: envValue('AUTHORIZED_EMBED_PROVIDER_12_NAME', 'Streamtape'),
-    baseUrl: envValue('AUTHORIZED_EMBED_PROVIDER_12_BASE_URL', 'https://streamtape.com'),
-    moviePattern: envValue('AUTHORIZED_EMBED_PROVIDER_12_MOVIE_PATTERN', '/e/{tmdb_id}'),
-    tvPattern: envValue('AUTHORIZED_EMBED_PROVIDER_12_TV_PATTERN', '/e/{tmdb_id}-{season}-{episode}')
-  }),
-  providerConfig({
-    id: 'env-13',
-    index: 13,
-    name: envValue('AUTHORIZED_EMBED_PROVIDER_13_NAME', 'VOE'),
-    baseUrl: envValue('AUTHORIZED_EMBED_PROVIDER_13_BASE_URL', 'https://voe.sx'),
-    moviePattern: envValue('AUTHORIZED_EMBED_PROVIDER_13_MOVIE_PATTERN', '/e/{tmdb_id}'),
-    tvPattern: envValue('AUTHORIZED_EMBED_PROVIDER_13_TV_PATTERN', '/e/{tmdb_id}-{season}-{episode}')
   })
 ];
 

@@ -92,13 +92,10 @@ class EmbedRepository {
   List<EmbedProviderInfo> _sortProviders(List<EmbedProviderInfo> providers) {
     const priority = <String>[
       'vidlink',
-      'filemoon',
-      'streamtape',
-      'voe',
       'vidsrc.cc',
       'vidsrc.cc v3',
       'vidsrc.me',
-      'vsrc.su',
+      'vidsrc.su',
       '2embed',
       'vsembed.ru',
       'vidsrc-embed.ru',

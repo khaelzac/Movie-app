@@ -291,6 +291,19 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     'vast?',
     'vpaid',
   ];
+  static const _allowedProviderTopLevelHosts = <String>[
+    'vidlink.pro',
+    'vidsrc.cc',
+    'vidsrc.me',
+    'vidsrc.su',
+    'vsrc.su',
+    '2embed.to',
+    'vsemembed.ru',
+    'vidsrc-embed.ru',
+    'vidsrc-embed.su',
+    'nontongo.com',
+    'player.videasy.net',
+  ];
 
   @override
   void initState() {
@@ -517,9 +530,11 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
           ),
         ),
         if (_isResolving || _isPageLoading)
-          _LoadingOverlay(
-            message: _isResolving ? 'Preparing embed...' : 'Loading player...',
-            progress: _progress,
+          IgnorePointer(
+            child: _LoadingOverlay(
+              message: _isResolving ? 'Preparing embed...' : 'Loading player...',
+              progress: _progress,
+            ),
           ),
         if (_playbackError != null)
           ColoredBox(
@@ -671,7 +686,12 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     final current = Uri.tryParse(uri.toString());
     if (current == null) return false;
     if (current.scheme != 'https') return false;
-    return current.host == embedUri.host && current.path == embedUri.path;
+    if (current.host == embedUri.host && current.path == embedUri.path) {
+      return true;
+    }
+    return _allowedProviderTopLevelHosts.any(
+      (host) => current.host == host || current.host.endsWith('.$host'),
+    );
   }
 
   bool _shouldBlockUrl(WebUri uri) {

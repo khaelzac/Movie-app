@@ -135,7 +135,7 @@ const defaultProviders = [
     tvPattern: envValue('AUTHORIZED_EMBED_PROVIDER_2_TV_PATTERN', '/tv/{tmdb_id}/{season}/{episode}'),
     queryParams: envValue(
       'AUTHORIZED_EMBED_PROVIDER_2_QUERY_PARAMS',
-      'autoplay=false&player=default&title=true&poster=true'
+      'autoplay=true&player=default&title=true&poster=true'
     )
   }),
   providerConfig({

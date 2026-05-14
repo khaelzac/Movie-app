@@ -42,9 +42,10 @@ const customEmbedProvider = {
   })
 };
 
-const createCustomEmbedProvider = ({ id, name, baseUrl, moviePattern, tvPattern }) => ({
+const createCustomEmbedProvider = ({ id, name, baseUrl, moviePattern, tvPattern, resolver }) => ({
   name: id,
   label: name,
+  resolver,
   isConfigured: () => Boolean(baseUrl),
   movie: (tmdbId) => ({
     provider: id,

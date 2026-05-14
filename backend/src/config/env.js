@@ -31,7 +31,7 @@ const envValue = (name) => {
 const numberedEmbedProviders = () => {
   const indexes = new Set();
   for (const key of Object.keys(process.env)) {
-    const match = key.match(/^authorized_embed_provider_(\d+)_(name|base_url|movie_pattern|tv_pattern)$/i);
+    const match = key.match(/^authorized_embed_provider_(\d+)_(name|base_url|movie_pattern|tv_pattern|resolver)$/i);
     if (match) indexes.add(Number(match[1]));
   }
 
@@ -42,7 +42,8 @@ const numberedEmbedProviders = () => {
       name: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_NAME`) || `Server ${index}`,
       baseUrl: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_BASE_URL`),
       moviePattern: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_MOVIE_PATTERN`) || '/movie/{tmdb_id}',
-      tvPattern: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_TV_PATTERN`) || '/tv/{tmdb_id}/{season}/{episode}'
+      tvPattern: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_TV_PATTERN`) || '/tv/{tmdb_id}/{season}/{episode}',
+      resolver: envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_RESOLVER`)
     }));
 };
 
@@ -96,6 +97,7 @@ const env = {
   streamResolveRetries: Number(process.env.STREAM_RESOLVE_RETRIES || 2),
   streamProxyBaseUrl,
   streamProxyEnabled: boolValue(process.env.STREAM_PROXY_ENABLED, Boolean(streamProxyBaseUrl)),
+  streamResolverViaProxy: boolValue(process.env.STREAM_RESOLVER_VIA_PROXY, false),
   streamProvider: process.env.STREAM_PROVIDER || 'disabled',
   streamProviders: splitList(process.env.STREAM_PROVIDERS || ''),
   videasyBaseUrl: process.env.VIDEASY_BASE_URL || '',

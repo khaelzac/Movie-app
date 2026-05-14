@@ -74,7 +74,7 @@ const extractInlineScripts = (html) => {
   return scripts;
 };
 
-const extractScriptUrls = (html, baseUrl, maxScripts = 8) => {
+const extractScriptUrls = (html, baseUrl, maxScripts = 24) => {
   const $ = cheerio.load(html);
   const sources = [];
 

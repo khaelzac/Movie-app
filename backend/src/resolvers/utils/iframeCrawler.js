@@ -68,6 +68,7 @@ const crawlForHls = async (startUrl, options = {}) => {
   const maxPages = options.maxPages || DEFAULT_MAX_PAGES;
   const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
   const candidateFailures = [];
+  const pageFetchFailures = [];
 
   while (queue.length > 0 && visited.size < maxPages) {
     const current = queue.shift();
@@ -84,6 +85,7 @@ const crawlForHls = async (startUrl, options = {}) => {
         retries: options.retries
       });
     } catch (error) {
+      pageFetchFailures.push(error);
       logResolverEvent('warn', 'page_fetch_failed', {
         url: currentUrl,
         depth: current.depth,
@@ -158,6 +160,10 @@ const crawlForHls = async (startUrl, options = {}) => {
       maxPages,
       maxDepth
     });
+  }
+
+  if (visited.size > 0 && pageFetchFailures.length === visited.size) {
+    throw pageFetchFailures[0];
   }
 
   return null;

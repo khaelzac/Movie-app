@@ -1,3 +1,4 @@
+const { directHlsResolver } = require('./directHlsResolver');
 const { nontongoResolver } = require('./nontongoResolver');
 const { twoEmbedResolver } = require('./twoEmbedResolver');
 const { videasyResolver } = require('./videasyResolver');
@@ -13,6 +14,13 @@ const hostname = (value) => {
 };
 
 const providerResolvers = [
+  {
+    resolver: directHlsResolver,
+    matches: ({ provider }) => (
+      /^(direct-hls|hls|api)$/i.test(provider.resolver || '') ||
+      /direct hls|hls api/i.test(provider.label || provider.name)
+    )
+  },
   {
     resolver: vidlinkResolver,
     matches: ({ provider, source }) => (

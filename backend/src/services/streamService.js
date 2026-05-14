@@ -59,6 +59,13 @@ const delay = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
 
+const shouldRetryResolve = (error) => {
+  const status = error.response?.status || error.status;
+  if ([400, 401, 403, 404, 405, 410, 451].includes(status)) return false;
+  if (status) return [408, 425, 429, 500, 502, 503, 504].includes(status);
+  return ['ECONNABORTED', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN'].includes(error.code);
+};
+
 const providerFailureMessage = (error) => {
   if (/no hls stream url found/i.test(error.message)) return error.message;
   if (/not a valid url|not an hls|#extm3u/i.test(error.message)) return error.message;
@@ -111,8 +118,10 @@ const resolveWithRetry = async (provider, source) => {
       });
     } catch (error) {
       lastError = error;
-      if (attempt < env.streamResolveRetries) {
+      if (attempt < env.streamResolveRetries && shouldRetryResolve(error)) {
         await delay(200 * (attempt + 1));
+      } else {
+        break;
       }
     }
   }

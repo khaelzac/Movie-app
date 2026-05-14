@@ -10,12 +10,19 @@ const toAbsoluteUrl = (value, baseUrl) => {
     .replace(/\\\//g, '/')
     .replace(/&amp;/g, '&');
 
+  if (looksLikeDynamicScriptUrl(trimmed)) return null;
+
   try {
     return new URL(trimmed, baseUrl).toString();
   } catch (_error) {
     return null;
   }
 };
+
+const looksLikeDynamicScriptUrl = (value) => (
+  /\$\{|[{}]|\b(?:encode|decode)URIComponent\s*\(|\.concat\s*\(/i.test(value) ||
+  /(?:^|[^%])\+/.test(value)
+);
 
 const decodePayload = (value) => {
   if (!value) return '';
@@ -97,7 +104,7 @@ const extractApiUrls = (payload, baseUrl) => {
   for (const pattern of patterns) {
     for (const match of payload.matchAll(pattern)) {
       const value = match[1];
-      if (!value || value.includes('${') || value.includes('.concat(')) continue;
+      if (!value || looksLikeDynamicScriptUrl(value)) continue;
       const url = toAbsoluteUrl(value, baseUrl);
       if (url) urls.push(url);
     }
@@ -164,6 +171,7 @@ module.exports = {
   extractInlineScripts,
   extractScriptUrls,
   extractSubtitles,
+  looksLikeDynamicScriptUrl,
   toAbsoluteUrl,
   unique,
   uniqueSubtitles

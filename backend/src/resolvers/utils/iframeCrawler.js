@@ -20,9 +20,10 @@ const shouldCrawlUrl = (url) => {
   try {
     const parsed = new URL(url);
     const pathname = parsed.pathname.toLowerCase();
-    if (/\.(png|jpe?g|gif|webp|svg|css|woff2?|ttf|ico)$/i.test(pathname)) {
+    if (/\.(png|jpe?g|gif|webp|svg|css|woff2?|ttf|ico|avif|bmp|mp4|webm|mp3|aac|wav|zip|rar|7z|pdf)$/i.test(pathname)) {
       return false;
     }
+    if (/[{}]|\b(?:encode|decode)URIComponent\s*\(|(?:^|[^%])\+/.test(url)) return false;
     return ['http:', 'https:'].includes(parsed.protocol);
   } catch (_error) {
     return false;

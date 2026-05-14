@@ -151,6 +151,13 @@ const crawlForHls = async (startUrl, options = {}) => {
       checkedPages: visited.size,
       failures: candidateFailures.slice(0, 5)
     });
+  } else {
+    logResolverEvent('warn', 'hls_crawl_exhausted', {
+      startUrl,
+      checkedPages: visited.size,
+      maxPages,
+      maxDepth
+    });
   }
 
   return null;

@@ -60,6 +60,9 @@ const delay = (ms) => new Promise((resolve) => {
 });
 
 const providerFailureMessage = (error) => {
+  if (/no hls stream url found/i.test(error.message)) return error.message;
+  if (/not a valid url|not an hls|#extm3u/i.test(error.message)) return error.message;
+
   const status = error.response?.status || error.status;
   if (status === 403) return 'upstream rejected the request';
   if (status === 404) return 'upstream embed URL was not found';
@@ -71,8 +74,6 @@ const providerFailureMessage = (error) => {
   if (error.code === 'CERT_HAS_EXPIRED' || /certificate has expired/i.test(error.message)) {
     return 'certificate has expired';
   }
-  if (/no hls stream url found/i.test(error.message)) return error.message;
-  if (/not a valid url|not an hls|#extm3u/i.test(error.message)) return error.message;
 
   return error.message || 'provider failed';
 };

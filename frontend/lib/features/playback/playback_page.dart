@@ -966,7 +966,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                                       : AppColors.textMuted,
                                   fontWeight: FontWeight.w800,
                                 ),
-                            onSelected: provider.configured && provider.enabled
+                            onSelected: _providerSelectable(provider)
                                 ? (_) {
                                     Navigator.of(context).pop();
                                     if (provider.id == selectedProvider) {
@@ -1205,13 +1205,13 @@ class _ServerSwitcher extends StatelessWidget {
                   backgroundColor:
                       AppColors.surfaceRaised.withValues(alpha: 0.92),
                   labelStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: provider.configured && provider.enabled
+                        color: _providerSelectable(provider)
                             ? Colors.white
                             : AppColors.textMuted,
                         fontWeight: FontWeight.w800,
                       ),
                   side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
-                  onSelected: provider.configured && provider.enabled
+                  onSelected: _providerSelectable(provider)
                       ? (_) => onSelected(provider.id)
                       : null,
                 ),
@@ -1226,8 +1226,11 @@ class _ServerSwitcher extends StatelessWidget {
 String _providerLabel(EmbedProviderInfo provider) {
   final name = provider.name.isEmpty ? provider.id : provider.name;
   if (!provider.configured) return '$name (not configured)';
-  if (!provider.enabled) return '$name (disabled)';
   return name;
+}
+
+bool _providerSelectable(EmbedProviderInfo provider) {
+  return provider.configured;
 }
 
 class _PlaybackControls extends StatelessWidget {

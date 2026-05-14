@@ -51,6 +51,7 @@ const appendQueryParams = (url, queryString) => {
 };
 
 const providerEnvKey = (id) => id.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+const forcedEnabledProviderIds = new Set(['env-11', 'env-12', 'env-13']);
 
 const validateBaseUrl = (baseUrl) => {
   if (!baseUrl) return '';
@@ -80,8 +81,10 @@ const providerHealthScore = (id) => numberValue(
 );
 
 const providerEnabled = (id, index) => boolValue(
-  envValue(`EMBED_PROVIDER_${providerEnvKey(id)}_ENABLED`,
-    index ? envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_ENABLED`, 'true') : 'true'),
+  forcedEnabledProviderIds.has(id)
+    ? 'true'
+    : envValue(`EMBED_PROVIDER_${providerEnvKey(id)}_ENABLED`,
+      index ? envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_ENABLED`, 'true') : 'true'),
   true
 );
 

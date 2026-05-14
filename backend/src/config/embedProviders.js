@@ -172,7 +172,7 @@ const embedProviders = defaultProviders;
 
 const providerById = (providerId) => embedProviders.find((provider) => provider.id === providerId);
 
-const providerAllowlist = () => splitList(process.env.EMBED_PROVIDERS);
+const providerAllowlist = () => splitList(process.env.EMBED_PROVIDERS || process.env.STREAM_PROVIDERS);
 
 const orderedByAllowlist = (providers) => {
   const allowlist = providerAllowlist();

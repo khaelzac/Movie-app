@@ -9,7 +9,6 @@ import '../features/details/tv_details_page.dart';
 import '../features/home/home_page.dart';
 import '../features/my_list/my_list_page.dart';
 import '../features/playback/playback_page.dart';
-import '../features/profiles/profile_selection_page.dart';
 import '../features/search/search_page.dart';
 import '../features/settings/settings_page.dart';
 import '../features/splash/splash_page.dart';
@@ -19,7 +18,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: AppRoutes.splash,
     routes: [
       GoRoute(path: AppRoutes.splash, builder: (_, __) => const SplashPage()),
-      GoRoute(path: AppRoutes.profiles, builder: (_, __) => const ProfileSelectionPage()),
       GoRoute(path: AppRoutes.home, builder: (_, __) => const HomePage()),
       GoRoute(
         path: '/movie/:id',
@@ -51,9 +49,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
         ),
       ),
-      GoRoute(path: '/catalog/:type', builder: (_, state) => CatalogPage(type: state.pathParameters['type']!)),
+      GoRoute(
+          path: '/catalog/:type',
+          builder: (_, state) =>
+              CatalogPage(type: state.pathParameters['type']!)),
       GoRoute(path: AppRoutes.myList, builder: (_, __) => const MyListPage()),
-      GoRoute(path: AppRoutes.settings, builder: (_, __) => const SettingsPage()),
+      GoRoute(
+          path: AppRoutes.settings, builder: (_, __) => const SettingsPage()),
     ],
   );
 });
@@ -63,11 +65,13 @@ CustomTransitionPage<void> _detailsPage(GoRouterState state, Widget child) {
     key: state.pageKey,
     child: child,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      final curved =
+          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
       return FadeTransition(
         opacity: curved,
         child: SlideTransition(
-          position: Tween(begin: const Offset(0.035, 0), end: Offset.zero).animate(curved),
+          position: Tween(begin: const Offset(0.035, 0), end: Offset.zero)
+              .animate(curved),
           child: child,
         ),
       );

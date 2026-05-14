@@ -4,7 +4,8 @@ const {
   embedProviders,
   buildMovieEmbedUrl,
   buildTvEmbedUrl,
-  chooseEmbedProvider
+  chooseEmbedProvider,
+  enabledEmbedProviders
 } = require('../config/embedProviders');
 
 const positiveInt = (value, name) => {
@@ -83,13 +84,19 @@ const createResponse = ({ provider, providerEmbedUrl, mediaType, tmdbId, season,
 };
 
 const embedService = {
-  providers: () => embedProviders.map((provider) => ({
-    id: provider.id,
-    name: provider.name,
-    configured: Boolean(provider.baseUrl),
-    enabled: provider.enabled,
-    healthScore: provider.healthScore
-  })),
+  providers: () => {
+    const availableProviderIds = new Set(
+      enabledEmbedProviders().map((provider) => provider.id)
+    );
+
+    return embedProviders.map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      configured: Boolean(provider.baseUrl),
+      enabled: availableProviderIds.has(provider.id),
+      healthScore: provider.healthScore
+    }));
+  },
 
   movie: (tmdbId, providerId) => {
     const id = positiveInt(tmdbId, 'tmdbId');

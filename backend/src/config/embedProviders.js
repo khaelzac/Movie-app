@@ -37,6 +37,19 @@ const joinEmbedUrl = (baseUrl, pattern, values) => {
   return `${normalizedBase}${renderPattern(normalizedPattern, values)}`;
 };
 
+const appendQueryParams = (url, queryString) => {
+  if (!queryString) return url;
+
+  const parsed = new URL(url);
+  const params = new URLSearchParams(String(queryString).replace(/^\?/, ''));
+  for (const [key, value] of params.entries()) {
+    if (!parsed.searchParams.has(key)) {
+      parsed.searchParams.set(key, value);
+    }
+  }
+  return parsed.toString();
+};
+
 const providerHealthScore = (id) => numberValue(
   envValue(`EMBED_PROVIDER_${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_HEALTH_SCORE`),
   100
@@ -54,6 +67,7 @@ const providerConfig = ({
   baseUrl,
   moviePattern,
   tvPattern,
+  queryParams = '',
   index,
   enabled = true,
   healthScore = 100
@@ -63,6 +77,7 @@ const providerConfig = ({
   baseUrl,
   moviePattern,
   tvPattern,
+  queryParams,
   enabled: enabled && providerEnabled(id, index),
   healthScore: providerHealthScore(id) || healthScore,
   index
@@ -90,7 +105,11 @@ const defaultProviders = [
     name: envValue('AUTHORIZED_EMBED_PROVIDER_2_NAME', 'VidLink'),
     baseUrl: envValue('AUTHORIZED_EMBED_PROVIDER_2_BASE_URL', 'https://vidlink.pro'),
     moviePattern: envValue('AUTHORIZED_EMBED_PROVIDER_2_MOVIE_PATTERN', '/movie/{tmdb_id}'),
-    tvPattern: envValue('AUTHORIZED_EMBED_PROVIDER_2_TV_PATTERN', '/tv/{tmdb_id}/{season}/{episode}')
+    tvPattern: envValue('AUTHORIZED_EMBED_PROVIDER_2_TV_PATTERN', '/tv/{tmdb_id}/{season}/{episode}'),
+    queryParams: envValue(
+      'AUTHORIZED_EMBED_PROVIDER_2_QUERY_PARAMS',
+      'autoplay=false&player=jw&title=true&poster=true'
+    )
   }),
   providerConfig({
     id: 'env-3',
@@ -211,15 +230,21 @@ const chooseEmbedProvider = ({ providerId, strategy = process.env.EMBED_PROVIDER
   return randomProvider(candidates);
 };
 
-const buildMovieEmbedUrl = (provider, tmdbId) => joinEmbedUrl(provider.baseUrl, provider.moviePattern, {
-  tmdb_id: tmdbId
-});
+const buildMovieEmbedUrl = (provider, tmdbId) => appendQueryParams(
+  joinEmbedUrl(provider.baseUrl, provider.moviePattern, {
+    tmdb_id: tmdbId
+  }),
+  provider.queryParams
+);
 
-const buildTvEmbedUrl = (provider, tmdbId, season, episode) => joinEmbedUrl(provider.baseUrl, provider.tvPattern, {
-  tmdb_id: tmdbId,
-  season,
-  episode
-});
+const buildTvEmbedUrl = (provider, tmdbId, season, episode) => appendQueryParams(
+  joinEmbedUrl(provider.baseUrl, provider.tvPattern, {
+    tmdb_id: tmdbId,
+    season,
+    episode
+  }),
+  provider.queryParams
+);
 
 module.exports = {
   embedProviders,

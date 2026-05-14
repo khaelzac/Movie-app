@@ -103,7 +103,6 @@ const _pageCleanupScript = r'''
     '[class*="banner" i]',
     '[class*="popup" i]',
     '[class*="popunder" i]',
-    '[class*="overlay" i]',
     'iframe[src*="doubleclick"]',
     'iframe[src*="googlesyndication"]',
     'iframe[src*="popads"]'
@@ -131,6 +130,80 @@ const _pageCleanupScript = r'''
       try { node.click(); } catch (_) {}
     }
   });
+})();
+''';
+
+const _playbackPreferenceScript = r'''
+(function () {
+  if (window.__ocampoPlaybackPreferencesInstalled) return;
+  window.__ocampoPlaybackPreferencesInstalled = true;
+
+  function preferAudio(video) {
+    try {
+      video.defaultMuted = false;
+      video.muted = false;
+      video.volume = 1;
+    } catch (_) {}
+  }
+
+  function preferExistingVideos() {
+    document.querySelectorAll('video').forEach(function (video) {
+      preferAudio(video);
+      video.addEventListener('play', function () { preferAudio(video); }, { once: true });
+      video.addEventListener('loadedmetadata', function () { preferAudio(video); }, { once: true });
+    });
+  }
+
+  function qualityScore(level) {
+    var label = String((level && (level.label || level.name)) || '');
+    var labelHeight = Number((label.match(/(\d{3,4})p/i) || [])[1] || 0);
+    var height = Number((level && (level.height || level.videoHeight)) || 0);
+    var bitrate = Number((level && (level.bitrate || level.bandwidth)) || 0);
+    return Math.max(labelHeight, height, Math.floor(bitrate / 1000));
+  }
+
+  function preferBestJwQuality(player) {
+    try {
+      var levels = player.getQualityLevels ? player.getQualityLevels() : [];
+      if (!levels || levels.length < 2 || !player.setCurrentQuality) return;
+
+      var bestIndex = 0;
+      var bestScore = -1;
+      levels.forEach(function (level, index) {
+        var score = qualityScore(level);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = index;
+        }
+      });
+      player.setCurrentQuality(bestIndex);
+    } catch (_) {}
+  }
+
+  function preferPlayerQuality() {
+    try {
+      if (!window.jwplayer) return;
+      var player = window.jwplayer();
+      preferBestJwQuality(player);
+      if (player && player.on) {
+        player.on('ready', function () { preferBestJwQuality(player); });
+        player.on('levels', function () { preferBestJwQuality(player); });
+      }
+    } catch (_) {}
+  }
+
+  preferExistingVideos();
+  preferPlayerQuality();
+
+  new MutationObserver(function (mutations) {
+    mutations.forEach(function (mutation) {
+      mutation.addedNodes.forEach(function (node) {
+        if (node.nodeType !== 1) return;
+        if (node.tagName === 'VIDEO') preferAudio(node);
+        if (node.querySelectorAll) preferExistingVideos();
+      });
+    });
+  }).observe(document.documentElement, { childList: true, subtree: true });
 })();
 ''';
 
@@ -284,24 +357,13 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
       canPop: true,
       child: Shortcuts(
         shortcuts: const <ShortcutActivator, Intent>{
-          SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
-          SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
-          SingleActivator(LogicalKeyboardKey.gameButtonA): ActivateIntent(),
           SingleActivator(LogicalKeyboardKey.goBack): DismissIntent(),
           SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
           SingleActivator(LogicalKeyboardKey.contextMenu):
               _ShowControlsIntent(),
-          SingleActivator(LogicalKeyboardKey.mediaPlayPause):
-              _ShowControlsIntent(),
         },
         child: Actions(
           actions: <Type, Action<Intent>>{
-            ActivateIntent: CallbackAction<ActivateIntent>(
-              onInvoke: (_) {
-                _showControlsTemporarily();
-                return null;
-              },
-            ),
             DismissIntent: CallbackAction<DismissIntent>(
               onInvoke: (_) {
                 Navigator.of(context).maybePop();
@@ -318,6 +380,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
           child: Focus(
             focusNode: _focusNode,
             autofocus: true,
+            onKeyEvent: _handlePlaybackKey,
             child: Scaffold(
               backgroundColor: Colors.black,
               body: source.when(
@@ -568,6 +631,12 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
         forMainFrameOnly: false,
         source: _popupMitigationScript,
       ),
+      UserScript(
+        groupName: 'embed-playback-preferences',
+        injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+        forMainFrameOnly: false,
+        source: _playbackPreferenceScript,
+      ),
     ]);
   }
 
@@ -599,6 +668,8 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     await _webViewController?.evaluateJavascript(
         source: _popupMitigationScript);
     await _webViewController?.evaluateJavascript(source: _pageCleanupScript);
+    await _webViewController?.evaluateJavascript(
+        source: _playbackPreferenceScript);
   }
 
   bool _isMainEmbedUrl(WebUri? url, Uri embedUri) {
@@ -776,9 +847,29 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     _scheduleControlsHide();
   }
 
+  KeyEventResult _handlePlaybackKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    final key = event.logicalKey;
+    final wakesChrome = key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.contextMenu ||
+        key == LogicalKeyboardKey.gameButtonStart ||
+        key == LogicalKeyboardKey.info;
+
+    if (wakesChrome && !_controlsVisible) {
+      _showControlsTemporarily();
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
+  }
+
   void _scheduleControlsHide() {
     _controlsTimer?.cancel();
-    _controlsTimer = Timer(const Duration(seconds: 5), () {
+    _controlsTimer = Timer(const Duration(seconds: 12), () {
       if (!mounted ||
           _isResolving ||
           _isPageLoading ||

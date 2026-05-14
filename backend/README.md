@@ -24,6 +24,7 @@ RATE_LIMIT_MAX=120
 REQUEST_TIMEOUT_MS=8000
 STREAM_RESOLVE_RETRIES=2
 STREAM_PROXY_BASE_URL=
+STREAM_PROXY_ENABLED=false
 STREAM_PROVIDER=disabled
 STREAM_PROVIDERS=
 VIDEASY_BASE_URL=
@@ -66,7 +67,7 @@ Successful stream responses use this shape:
 }
 ```
 
-Set `STREAM_PROXY_BASE_URL` to a worker/proxy endpoint if clients need proxied HLS URLs. The backend appends `url` and `referer` query parameters.
+Set `STREAM_PROXY_BASE_URL` to your Cloudflare Worker `/proxy` endpoint and `STREAM_PROXY_ENABLED=true` to return proxied HLS URLs to clients. If `STREAM_PROXY_ENABLED` is unset, the backend enables proxying automatically when `STREAM_PROXY_BASE_URL` is configured. The backend appends `url` and `referer` query parameters so the Worker can rewrite relative playlists and media segments.
 
 Supported provider module names:
 

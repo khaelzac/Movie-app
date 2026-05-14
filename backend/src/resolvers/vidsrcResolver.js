@@ -1,5 +1,3 @@
-const { createHtmlResolver } = require('./resolverUtils');
-
-const vidsrcResolver = createHtmlResolver({ name: 'vidsrc' });
+const { vidsrcResolver } = require('./providers/vidsrcResolver');
 
 module.exports = { vidsrcResolver };

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/media_item.dart';
@@ -58,8 +60,10 @@ final streamProvidersProvider = FutureProvider<List<StreamProviderInfo>>((ref) {
   return ref.watch(streamRepositoryProvider).providers();
 });
 
-final streamSourceProvider =
-    FutureProvider.family<StreamSource, StreamRequest>((ref, request) {
+final streamSourceProvider = FutureProvider.autoDispose
+    .family<StreamSource, StreamRequest>((ref, request) {
+  ref.cacheFor(const Duration(seconds: 20));
+
   final repository = ref.watch(streamRepositoryProvider);
   if (request.mediaType == 'tv') {
     return repository.tv(request.id, request.season ?? 1, request.episode ?? 1,
@@ -192,6 +196,23 @@ class StreamRequest {
   final int? episode;
   final String? provider;
 
+  StreamRequest copyWith({
+    String? mediaType,
+    int? id,
+    int? season,
+    int? episode,
+    String? provider,
+    bool clearProvider = false,
+  }) {
+    return StreamRequest(
+      mediaType: mediaType ?? this.mediaType,
+      id: id ?? this.id,
+      season: season ?? this.season,
+      episode: episode ?? this.episode,
+      provider: clearProvider ? null : provider ?? this.provider,
+    );
+  }
+
   @override
   bool operator ==(Object other) {
     return other is StreamRequest &&
@@ -295,4 +316,12 @@ class PagedMediaController extends HomeRailController {
     required super.repository,
     required super.loader,
   });
+}
+
+extension CacheForExtension on Ref<Object?> {
+  void cacheFor(Duration duration) {
+    final link = keepAlive();
+    final timer = Timer(duration, link.close);
+    onDispose(timer.cancel);
+  }
 }

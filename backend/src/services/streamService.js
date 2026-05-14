@@ -2,9 +2,10 @@ const { env } = require('../config/env');
 const { createCustomEmbedProvider, customEmbedProvider } = require('../providers/customEmbedProvider');
 const { videasyProvider } = require('../providers/videasyProvider');
 const { vidsrcProvider } = require('../providers/vidsrcProvider');
-const { genericResolver } = require('../resolvers/genericResolver');
-const { nontongoResolver } = require('../resolvers/nontongoResolver');
-const { vidsrcResolver } = require('../resolvers/vidsrcResolver');
+const resolvedStreamCache = require('../resolvers/utils/memoryCache');
+const { validateHlsUrl } = require('../resolvers/utils/hlsValidator');
+const { resolverForProvider } = require('../resolvers/providers');
+const { createProxiedHlsUrl } = require('./streamProxyService');
 
 const envProviders = Object.fromEntries(
   env.authorizedEmbedProviders.map((provider) => [
@@ -18,18 +19,6 @@ const providers = {
   videasy: videasyProvider,
   vidsrc: vidsrcProvider,
   ...envProviders
-};
-
-const resolverByProvider = {
-  'env-2': vidsrcResolver,
-  vidsrc: vidsrcResolver,
-  'env-3': vidsrcResolver,
-  'env-5': vidsrcResolver,
-  'env-6': vidsrcResolver,
-  'env-7': vidsrcResolver,
-  'env-8': nontongoResolver,
-  'env-9': vidsrcResolver,
-  'env-10': vidsrcResolver
 };
 
 const providerOrder = () => {
@@ -66,48 +55,6 @@ const selectedProviders = (providerName) => {
   return selected;
 };
 
-const isHlsUrl = (value) => {
-  try {
-    return new URL(value).pathname.toLowerCase().endsWith('.m3u8');
-  } catch (_error) {
-    return false;
-  }
-};
-
-const validateStreamUrl = (value) => {
-  let parsed;
-  try {
-    parsed = new URL(value);
-  } catch (_error) {
-    const error = new Error('Resolved stream URL is not a valid URL.');
-    error.status = 502;
-    throw error;
-  }
-
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    const error = new Error('Resolved stream URL must use HTTP or HTTPS.');
-    error.status = 502;
-    throw error;
-  }
-
-  if (!isHlsUrl(parsed.toString())) {
-    const error = new Error('Resolved stream URL is not an HLS .m3u8 playlist.');
-    error.status = 502;
-    throw error;
-  }
-
-  return parsed.toString();
-};
-
-const withProxy = (streamUrl, referer) => {
-  if (!env.streamProxyBaseUrl) return streamUrl;
-
-  const proxyUrl = new URL(env.streamProxyBaseUrl);
-  proxyUrl.searchParams.set('url', streamUrl);
-  if (referer) proxyUrl.searchParams.set('referer', referer);
-  return proxyUrl.toString();
-};
-
 const delay = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
@@ -125,7 +72,7 @@ const providerFailureMessage = (error) => {
     return 'certificate has expired';
   }
   if (/no hls stream url found/i.test(error.message)) return error.message;
-  if (/not a valid url|not an hls/i.test(error.message)) return error.message;
+  if (/not a valid url|not an hls|#extm3u/i.test(error.message)) return error.message;
 
   return error.message || 'provider failed';
 };
@@ -137,8 +84,18 @@ const providerFailure = (provider, error) => {
   return wrapped;
 };
 
+const cacheKeyFor = (provider, source) => [
+  'stream',
+  provider.name,
+  source.mediaType,
+  source.tmdbId,
+  source.season || '',
+  source.episode || '',
+  source.url
+].join(':');
+
 const resolveWithRetry = async (provider, source) => {
-  const resolver = resolverByProvider[provider.name] || genericResolver;
+  const resolver = resolverForProvider(provider, source);
   let lastError;
 
   for (let attempt = 0; attempt <= env.streamResolveRetries; attempt += 1) {
@@ -148,7 +105,8 @@ const resolveWithRetry = async (provider, source) => {
         provider,
         source
       }, {
-        timeoutMs: env.requestTimeoutMs
+        timeoutMs: env.requestTimeoutMs,
+        retries: 1
       });
     } catch (error) {
       lastError = error;
@@ -167,13 +125,17 @@ const resolveFromProviders = async (mediaFactory, providerName) => {
   for (const provider of selectedProviders(providerName)) {
     try {
       const source = mediaFactory(provider);
-      const resolved = await resolveWithRetry(provider, source);
-      const directStreamUrl = validateStreamUrl(resolved.streamUrl);
+      const resolved = await resolvedStreamCache.getOrSet(
+        cacheKeyFor(provider, source),
+        () => resolveWithRetry(provider, source),
+        env.cacheTtlSeconds
+      );
+      const directStreamUrl = validateHlsUrl(resolved.streamUrl);
       const referer = resolved.referer || new URL(source.url).origin;
 
       return {
         provider: provider.name,
-        streamUrl: withProxy(directStreamUrl, referer),
+        streamUrl: createProxiedHlsUrl(directStreamUrl, referer),
         referer,
         subtitles: Array.isArray(resolved.subtitles) ? resolved.subtitles : []
       };

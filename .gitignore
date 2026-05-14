@@ -10,4 +10,5 @@ package-lock.json
 frontend/android/key.properties
 frontend/android/app/*.jks
 frontend/android/app/*.keystore
+workers/
 *.log

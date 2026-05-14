@@ -1,5 +1,3 @@
-const { createHtmlResolver } = require('./resolverUtils');
-
-const nontongoResolver = createHtmlResolver({ name: 'nontongo' });
+const { nontongoResolver } = require('./providers/nontongoResolver');
 
 module.exports = { nontongoResolver };

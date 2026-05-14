@@ -18,6 +18,11 @@ const splitList = (value) => {
   return value.split(',').map((item) => item.trim()).filter(Boolean);
 };
 
+const boolValue = (value, fallback = false) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+};
+
 const envValue = (name) => {
   const key = Object.keys(process.env).find((item) => item.toLowerCase() === name.toLowerCase());
   return key ? String(process.env[key]).trim() : '';
@@ -76,6 +81,8 @@ const normalizeEmbedProvider = (provider) => {
   return provider;
 };
 
+const streamProxyBaseUrl = process.env.STREAM_PROXY_BASE_URL || '';
+
 const env = {
   port: Number(process.env.PORT || 4000),
   tmdbApiKey: required('TMDB_API_KEY'),
@@ -87,7 +94,8 @@ const env = {
   rateLimitMax: Number(process.env.RATE_LIMIT_MAX || 120),
   requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS || 8000),
   streamResolveRetries: Number(process.env.STREAM_RESOLVE_RETRIES || 2),
-  streamProxyBaseUrl: process.env.STREAM_PROXY_BASE_URL || '',
+  streamProxyBaseUrl,
+  streamProxyEnabled: boolValue(process.env.STREAM_PROXY_ENABLED, Boolean(streamProxyBaseUrl)),
   streamProvider: process.env.STREAM_PROVIDER || 'disabled',
   streamProviders: splitList(process.env.STREAM_PROVIDERS || ''),
   videasyBaseUrl: process.env.VIDEASY_BASE_URL || '',

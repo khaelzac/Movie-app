@@ -46,8 +46,12 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   bool _controlsVisible = true;
   int _retryCount = 0;
   Timer? _controlsTimer;
+  Timer? _startupTimer;
+  Timer? _bufferingTimer;
 
-  static const _maxRetriesPerProvider = 1;
+  static const _maxRetriesPerProvider = 2;
+  static const _startupTimeout = Duration(seconds: 22);
+  static const _bufferingTimeout = Duration(seconds: 35);
 
   @override
   void initState() {
@@ -63,6 +67,8 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   @override
   void dispose() {
     _controlsTimer?.cancel();
+    _startupTimer?.cancel();
+    _bufferingTimer?.cancel();
     _disposePlayer();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
@@ -144,7 +150,8 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                 ),
                 if (_isPreparing || _isBuffering)
                   _LoadingOverlay(
-                    message: _isPreparing ? 'Loading stream...' : 'Buffering...',
+                    message:
+                        _isPreparing ? 'Loading stream...' : 'Buffering...',
                   ),
                 if (_playbackError != null)
                   ColoredBox(
@@ -238,18 +245,26 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     _isPreparing = true;
     _isBuffering = false;
     _playbackError = null;
+    _startStartupTimeout();
 
     final dataSource = BetterPlayerDataSource(
       BetterPlayerDataSourceType.network,
       source.url,
       videoFormat: BetterPlayerVideoFormat.hls,
+      videoExtension: 'm3u8',
       headers: _headersFor(source),
       subtitles: _subtitleSources(source),
+      useAsmsTracks: true,
+      useAsmsAudioTracks: true,
+      useAsmsSubtitles: true,
       cacheConfiguration: const BetterPlayerCacheConfiguration(
-        useCache: true,
-        preCacheSize: 10 * 1024 * 1024,
-        maxCacheSize: 100 * 1024 * 1024,
-        maxCacheFileSize: 30 * 1024 * 1024,
+        useCache: false,
+      ),
+      bufferingConfiguration: const BetterPlayerBufferingConfiguration(
+        minBufferMs: 12000,
+        maxBufferMs: 50000,
+        bufferForPlaybackMs: 1500,
+        bufferForPlaybackAfterRebufferMs: 3000,
       ),
     );
 
@@ -263,6 +278,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
         autoDetectFullscreenAspectRatio: true,
         allowedScreenSleep: false,
         handleLifecycle: true,
+        eventListener: _onPlayerEvent,
         controlsConfiguration: BetterPlayerControlsConfiguration(
           enableFullscreen: true,
           enablePlaybackSpeed: true,
@@ -284,14 +300,17 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
       betterPlayerDataSource: dataSource,
     );
 
-    controller.addEventsListener(_onPlayerEvent);
     _playerController = controller;
     return controller;
   }
 
   Map<String, String> _headersFor(StreamSource source) {
     final headers = <String, String>{
-      'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
+      'Accept':
+          'application/vnd.apple.mpegurl,application/x-mpegURL,application/vnd.apple.mpegurl,text/plain,*/*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'User-Agent':
+          'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
     };
     if (source.referer.isNotEmpty) {
       headers['Referer'] = source.referer;
@@ -307,6 +326,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
               type: BetterPlayerSubtitlesSourceType.network,
               name: subtitle.label,
               urls: [subtitle.url],
+              headers: _headersFor(source),
             ))
         .toList(growable: false);
   }
@@ -316,6 +336,8 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
 
     switch (event.betterPlayerEventType) {
       case BetterPlayerEventType.initialized:
+        _startupTimer?.cancel();
+        _bufferingTimer?.cancel();
         setState(() {
           _isPreparing = false;
           _isBuffering = false;
@@ -325,24 +347,64 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
         break;
       case BetterPlayerEventType.bufferingStart:
         setState(() => _isBuffering = true);
+        _startBufferingTimeout();
+        break;
+      case BetterPlayerEventType.bufferingUpdate:
+        _startBufferingTimeout();
         break;
       case BetterPlayerEventType.bufferingEnd:
+        _bufferingTimer?.cancel();
         setState(() => _isBuffering = false);
         break;
       case BetterPlayerEventType.exception:
-        _handlePlaybackFailure();
+        _handlePlaybackFailure(
+          message:
+              'The HLS stream failed during playback. The URL may have expired.',
+        );
         break;
       default:
         break;
     }
   }
 
-  void _handlePlaybackFailure() {
+  void _startStartupTimeout() {
+    _startupTimer?.cancel();
+    _startupTimer = Timer(_startupTimeout, () {
+      if (!mounted || !_isPreparing || _playbackError != null) return;
+      _handlePlaybackFailure(
+        message:
+            'The stream took too long to start. The playlist may be expired or blocked.',
+      );
+    });
+  }
+
+  void _startBufferingTimeout() {
+    _bufferingTimer?.cancel();
+    _bufferingTimer = Timer(_bufferingTimeout, () {
+      if (!mounted || !_isBuffering || _playbackError != null) return;
+      _handlePlaybackFailure(
+        message:
+            'Playback stalled while buffering. The HLS segments may have expired.',
+      );
+    });
+  }
+
+  Future<void> _handlePlaybackFailure({String? message}) async {
     if (!mounted) return;
 
     final request = _activeRequest;
     if (request != null && _retryCount < _maxRetriesPerProvider) {
       _retryCount += 1;
+      _startupTimer?.cancel();
+      _bufferingTimer?.cancel();
+      _disposePlayer();
+      setState(() {
+        _activeUrl = null;
+        _playbackError = null;
+        _isPreparing = true;
+        _isBuffering = false;
+      });
+      await Future<void>.delayed(Duration(milliseconds: 350 * _retryCount));
       ref.invalidate(streamSourceProvider(request));
       return;
     }
@@ -360,6 +422,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
         _activeUrl = null;
         _playbackError = null;
         _isPreparing = true;
+        _isBuffering = false;
       });
       return;
     }
@@ -367,12 +430,15 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     setState(() {
       _isPreparing = false;
       _isBuffering = false;
-      _playbackError =
+      _playbackError = message ??
           'Native playback could not start this HLS stream. Try another server or check the backend stream resolver.';
     });
   }
 
   void _retryCurrentProvider(StreamRequest request) {
+    _startupTimer?.cancel();
+    _bufferingTimer?.cancel();
+    _disposePlayer();
     setState(() {
       _activeUrl = null;
       _playbackError = null;
@@ -385,7 +451,6 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   void _disposePlayer() {
     final controller = _playerController;
     if (controller == null) return;
-    controller.removeEventsListener(_onPlayerEvent);
     controller.dispose();
     _playerController = null;
   }
@@ -449,11 +514,18 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     }
     if (raw.toLowerCase().contains('socket') ||
         raw.toLowerCase().contains('timeout') ||
-        raw.toLowerCase().contains('connection')) {
+        raw.toLowerCase().contains('connection') ||
+        raw.toLowerCase().contains('took too long')) {
       return 'This server did not respond. Try another server.';
     }
+    if (raw.toLowerCase().contains('expired') ||
+        raw.toLowerCase().contains('403') ||
+        raw.toLowerCase().contains('401')) {
+      return 'This stream link expired or was rejected. Retry to request a fresh link, or pick another server.';
+    }
     if (raw.toLowerCase().contains('m3u8') ||
-        raw.toLowerCase().contains('hls')) {
+        raw.toLowerCase().contains('hls') ||
+        raw.toLowerCase().contains('extm3u')) {
       return 'This server did not return a playable HLS stream. Try another server.';
     }
     return 'This server could not start native playback. Try another server.';
@@ -562,6 +634,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                                       _activeUrl = null;
                                       _playbackError = null;
                                       _isPreparing = true;
+                                      _isBuffering = false;
                                     });
                                   }
                                 : null,
@@ -578,10 +651,8 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   }
 
   Future<void> _saveProgress() async {
-    final position =
-        await _playerController?.videoPlayerController?.position;
-    final duration =
-        _playerController?.videoPlayerController?.value.duration;
+    final position = await _playerController?.videoPlayerController?.position;
+    final duration = _playerController?.videoPlayerController?.value.duration;
 
     await ref.read(libraryControllerProvider.notifier).saveProgress(
           _detailsShell(),

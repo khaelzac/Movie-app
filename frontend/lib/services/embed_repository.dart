@@ -15,11 +15,12 @@ class EmbedRepository {
 
   Future<List<EmbedProviderInfo>> providers() async {
     final data = await _client.get(ApiEndpoints.embedProviders);
-    return (data['providers'] as List<dynamic>? ?? [])
+    final providers = (data['providers'] as List<dynamic>? ?? [])
         .whereType<Map<String, dynamic>>()
         .map(EmbedProviderInfo.fromJson)
         .where((provider) => provider.id.isNotEmpty)
         .toList(growable: false);
+    return _sortProviders(providers);
   }
 
   Future<EmbedSource> movie(int id, {String? provider}) async {
@@ -86,6 +87,39 @@ class EmbedRepository {
     }
 
     return source;
+  }
+
+  List<EmbedProviderInfo> _sortProviders(List<EmbedProviderInfo> providers) {
+    const priority = <String>[
+      'vidlink',
+      'vidsrc.cc',
+      'vidsrc.cc v3',
+      'vidsrc.me',
+      'vsrc.su',
+      '2embed',
+      'vsembed.ru',
+      'vidsrc-embed.ru',
+      'vidsrc-embed.su',
+      'nontongo',
+      'custom',
+    ];
+    final priorityIndex = {
+      for (var index = 0; index < priority.length; index += 1)
+        priority[index]: index,
+    };
+    final sorted = [...providers];
+    sorted.sort((a, b) {
+      final left = priorityIndex[_providerSortKey(a)] ?? priority.length;
+      final right = priorityIndex[_providerSortKey(b)] ?? priority.length;
+      if (left != right) return left.compareTo(right);
+      return b.healthScore.compareTo(a.healthScore);
+    });
+    return sorted;
+  }
+
+  String _providerSortKey(EmbedProviderInfo provider) {
+    final name = provider.name.trim().toLowerCase();
+    return name.isEmpty ? provider.id.trim().toLowerCase() : name;
   }
 }
 

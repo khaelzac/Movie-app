@@ -247,6 +247,9 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   double _progress = 0;
   Timer? _controlsTimer;
   Timer? _startupTimer;
+  Timer? _watchProgressTimer;
+  DateTime? _watchStartedAt;
+  int _savedPositionBaseSeconds = 0;
 
   static const _maxRetriesPerProvider = 2;
   static const _startupTimeout = Duration(seconds: 28);
@@ -302,6 +305,8 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   void dispose() {
     _controlsTimer?.cancel();
     _startupTimer?.cancel();
+    _watchProgressTimer?.cancel();
+    unawaited(_saveProgress(silent: true));
     _focusNode.dispose();
     _exitPlayerMode();
     super.dispose();
@@ -337,8 +342,8 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
         backgroundColor: Colors.black,
         body: _PlaybackError(
           message: providers.hasError
-              ? 'The embed server list could not be loaded. Check the backend URL and environment variables.'
-              : 'No configured embed providers were found. Add provider URLs in the backend environment, then redeploy.',
+              ? 'The embed server list could not be loaded. Check the backend URL and provider configuration.'
+              : 'No configured embed providers were found. Add provider URLs in the backend configuration, then redeploy.',
           onRetry: () => ref.invalidate(embedProvidersProvider),
         ),
       );
@@ -469,6 +474,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                 _playbackError = null;
                 _progress = 1;
               });
+              _startWatchTracking();
               _scheduleControlsHide();
             },
             onReceivedError: (_, request, error) {
@@ -546,14 +552,14 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                         ? selectedProvider
                         : source.provider,
                     canReload: _webViewReady,
-                    onBack: () => Navigator.of(context).maybePop(),
+                    onBack: _closePlayback,
                     onReload: _reloadWebView,
                     onServers: () => _showServerSheet(
                       context,
                       providers,
                       selectedProvider,
                     ),
-                    onSaveProgress: _saveProgress,
+                    onSaveProgress: () => _saveProgress(),
                     onNextEpisode:
                         widget.mediaType == 'tv' ? _nextEpisode : null,
                   ),
@@ -585,6 +591,17 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     _playbackError = null;
     _progress = 0;
     _startStartupTimeout(request);
+  }
+
+  void _startWatchTracking() {
+    if (_watchStartedAt == null) {
+      _watchStartedAt = DateTime.now();
+      _savedPositionBaseSeconds = _savedProgress()?.positionSeconds ?? 0;
+    }
+    _watchProgressTimer ??= Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => unawaited(_saveProgress(silent: true)),
+    );
   }
 
   InAppWebViewSettings _webViewSettings() {
@@ -741,6 +758,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
 
   void _retryCurrentProvider(EmbedRequest request) {
     _startupTimer?.cancel();
+    unawaited(_saveProgress(silent: true));
     setState(() {
       _activeEmbedUri = null;
       _playbackError = null;
@@ -753,6 +771,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
 
   Future<void> _reloadWebView() async {
     _showControlsTemporarily();
+    await _saveProgress(silent: true);
     setState(() {
       _playbackError = null;
       _isPageLoading = true;
@@ -779,6 +798,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
             errorMessage: providers.isEmpty ? 'No servers configured.' : null,
             onSelected: (provider) {
               if (provider == selectedProvider) return;
+              unawaited(_saveProgress(silent: true));
               setState(() {
                 _selectedProvider = provider;
                 _activeEmbedUri = null;
@@ -839,7 +859,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   String _friendlyPlaybackMessage(Object error) {
     final raw = error.toString().toLowerCase();
     if (raw.contains('501') || raw.contains('disabled or unsupported')) {
-      return 'This embed provider is not configured. Pick another server or update the backend environment variables.';
+      return 'This embed provider is not configured. Pick another server or update the backend provider configuration.';
     }
     if (raw.contains('token') || raw.contains('401') || raw.contains('403')) {
       return 'The signed embed link expired or was rejected. Retry to request a fresh link.';
@@ -956,6 +976,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                                     if (provider.id == selectedProvider) {
                                       return;
                                     }
+                                    unawaited(_saveProgress(silent: true));
                                     setState(() {
                                       _selectedProvider = provider.id;
                                       _activeEmbedUri = null;
@@ -977,18 +998,45 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
     );
   }
 
-  Future<void> _saveProgress() async {
+  Future<void> _saveProgress({bool silent = false}) async {
+    if (silent && _watchStartedAt == null) return;
+    final positionSeconds = _currentPositionSeconds();
+    final durationSeconds = _currentDurationSeconds(positionSeconds);
     await ref.read(libraryControllerProvider.notifier).saveProgress(
           _detailsShell(),
-          positionSeconds: 0,
-          durationSeconds: 0,
+          positionSeconds: positionSeconds,
+          durationSeconds: durationSeconds,
           season: widget.season,
           episode: widget.episode,
         );
-    _showControlsTemporarily();
+    if (!silent) _showControlsTemporarily();
+  }
+
+  Future<void> _closePlayback() async {
+    await _saveProgress(silent: true);
+    if (mounted) Navigator.of(context).maybePop();
+  }
+
+  PlaybackProgress? _savedProgress() {
+    return ref.read(libraryControllerProvider).progressFor(_detailsShell());
+  }
+
+  int _currentPositionSeconds() {
+    final startedAt = _watchStartedAt;
+    final elapsed =
+        startedAt == null ? 0 : DateTime.now().difference(startedAt).inSeconds;
+    return _savedPositionBaseSeconds + elapsed;
+  }
+
+  int _currentDurationSeconds(int positionSeconds) {
+    final savedDuration = _savedProgress()?.durationSeconds ?? 0;
+    final fallbackDuration = widget.mediaType == 'tv' ? 45 * 60 : 90 * 60;
+    final duration = savedDuration > 1 ? savedDuration : fallbackDuration;
+    return duration < positionSeconds ? positionSeconds + 60 : duration;
   }
 
   void _nextEpisode() {
+    unawaited(_saveProgress(silent: true));
     final season = widget.season ?? 1;
     final episode = (widget.episode ?? 1) + 1;
     Navigator.of(context).pushReplacement(

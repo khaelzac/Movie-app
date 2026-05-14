@@ -85,11 +85,15 @@ const createResponse = ({ provider, providerEmbedUrl, mediaType, tmdbId, season,
 
 const embedService = {
   providers: () => {
-    const availableProviderIds = new Set(
-      enabledEmbedProviders().map((provider) => provider.id)
-    );
+    const enabledProviders = enabledEmbedProviders();
+    const availableProviderIds = new Set(enabledProviders.map((provider) => provider.id));
+    const orderedProviderIds = new Set(enabledProviders.map((provider) => provider.id));
+    const orderedProviders = [
+      ...enabledProviders,
+      ...embedProviders.filter((provider) => !orderedProviderIds.has(provider.id))
+    ];
 
-    return embedProviders.map((provider) => ({
+    return orderedProviders.map((provider) => ({
       id: provider.id,
       name: provider.name,
       configured: Boolean(provider.baseUrl),

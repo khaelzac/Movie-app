@@ -7,9 +7,7 @@ import '../../core/navigation/app_routes.dart';
 import '../../core/responsive/responsive_layout.dart';
 import '../../models/media_item.dart';
 import '../../providers/catalog_providers.dart';
-import '../../services/local_library_repository.dart';
 import '../../shared/widgets/loading/shimmer_box.dart';
-import '../../shared/widgets/media/continue_watching_rail.dart';
 import '../../shared/widgets/media/hero_banner.dart';
 import '../../shared/widgets/media/movie_rail.dart';
 
@@ -19,8 +17,6 @@ class HomePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final trending = ref.watch(homeRailProvider('trending'));
-    final progress =
-        ref.watch(libraryControllerProvider.select((state) => state.progress));
     final hero = trending.items.isNotEmpty ? trending.items.first : null;
 
     return Scaffold(
@@ -38,14 +34,6 @@ class HomePage extends ConsumerWidget {
                         onPlay: () => _openDetails(context, hero),
                         onMoreInfo: () => _openDetails(context, hero),
                       ),
-              ),
-              SliverToBoxAdapter(
-                child: ContinueWatchingRail(
-                  items: progress,
-                  onClear: ref
-                      .read(libraryControllerProvider.notifier)
-                      .clearProgress,
-                ),
               ),
               const SliverToBoxAdapter(
                   child: _HomeRail(title: 'Trending', railKey: 'trending')),

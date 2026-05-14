@@ -953,11 +953,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                       children: [
                         for (final provider in visibleProviders)
                           ChoiceChip(
-                            label: Text(provider.configured
-                                ? (provider.name.isEmpty
-                                    ? provider.id
-                                    : provider.name)
-                                : '${provider.name.isEmpty ? provider.id : provider.name} (not configured)'),
+                            label: Text(_providerLabel(provider)),
                             selected: provider.id == selectedProvider,
                             selectedColor: AppColors.netflixRed,
                             backgroundColor: AppColors.surfaceRaised,
@@ -965,7 +961,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                                 .textTheme
                                 .labelLarge
                                 ?.copyWith(
-                                  color: provider.configured
+                                  color: provider.configured && provider.enabled
                                       ? Colors.white
                                       : AppColors.textMuted,
                                   fontWeight: FontWeight.w800,
@@ -1202,9 +1198,7 @@ class _ServerSwitcher extends StatelessWidget {
               for (final provider in visibleProviders)
                 ChoiceChip(
                   label: Text(
-                    provider.configured
-                        ? (provider.name.isEmpty ? provider.id : provider.name)
-                        : '${provider.name.isEmpty ? provider.id : provider.name} (not configured)',
+                    _providerLabel(provider),
                   ),
                   selected: provider.id == selectedProvider,
                   selectedColor: AppColors.netflixRed,
@@ -1227,6 +1221,13 @@ class _ServerSwitcher extends StatelessWidget {
       ),
     );
   }
+}
+
+String _providerLabel(EmbedProviderInfo provider) {
+  final name = provider.name.isEmpty ? provider.id : provider.name;
+  if (!provider.configured) return '$name (not configured)';
+  if (!provider.enabled) return '$name (disabled)';
+  return name;
 }
 
 class _PlaybackControls extends StatelessWidget {

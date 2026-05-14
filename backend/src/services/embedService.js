@@ -87,11 +87,15 @@ const embedService = {
   providers: () => {
     const enabledProviders = enabledEmbedProviders();
     const availableProviderIds = new Set(enabledProviders.map((provider) => provider.id));
-    const orderedProviderIds = new Set(enabledProviders.map((provider) => provider.id));
-    const orderedProviders = [
-      ...enabledProviders,
-      ...embedProviders.filter((provider) => !orderedProviderIds.has(provider.id))
-    ];
+    const allowlist = env.embedProviders;
+    const byId = new Map(embedProviders.map((provider) => [provider.id, provider]));
+    const allowlistedProviderIds = new Set(allowlist);
+    const orderedProviders = allowlist.length === 0
+      ? embedProviders
+      : [
+          ...allowlist.map((id) => byId.get(id)).filter(Boolean),
+          ...embedProviders.filter((provider) => !allowlistedProviderIds.has(provider.id))
+        ];
 
     return orderedProviders.map((provider) => ({
       id: provider.id,

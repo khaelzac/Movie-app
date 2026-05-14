@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "check": "node --check src/app.js && node --check src/server.js && node --check src/config/env.js && node --check src/config/embedProviders.js && node --check src/services/tmdbService.js && node --check src/services/embedService.js && node --check src/controllers/catalogController.js && node --check src/controllers/embedController.js && node --check src/routes/catalogRoutes.js && node --check src/routes/embedRoutes.js && node --check src/routes/index.js",
+    "check": "node --check src/app.js && node --check src/server.js && node --check src/config/env.js && node --check src/config/embedProviders.js && node --check src/utils/cache.js && node --check src/services/tmdbService.js && node --check src/services/embedService.js && node --check src/controllers/catalogController.js && node --check src/controllers/embedController.js && node --check src/routes/catalogRoutes.js && node --check src/routes/embedRoutes.js && node --check src/routes/index.js",
     "vercel-build": "node -e \"console.log('No build step required')\""
   },
   "engines": {
@@ -15,16 +15,14 @@
   },
   "dependencies": {
     "axios": "^1.16.1",
-    "compression": "^1.7.5",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
-    "helmet": "^8.0.0",
-    "morgan": "^1.10.0",
-    "node-cache": "^5.1.2"
+    "helmet": "^8.0.0"
   },
   "devDependencies": {
+    "morgan": "^1.10.0",
     "nodemon": "^3.1.9"
   }
 }

@@ -77,7 +77,6 @@ movieapp/
     embed-gateway/
       worker.js                      Signed iframe gateway Worker
       README.md                      Worker deployment and security notes
-    hls-proxy.js                     Legacy HLS proxy, deprecated/unused
 
   ARCHITECTURE.md                    This document
   DEPLOYMENT.md
@@ -437,7 +436,7 @@ New concepts:
 
 Deprecated/unused:
 
-- `workers/hls-proxy.js` is legacy HLS proxy code and is not part of the clean playback path.
+- Legacy HLS proxy code has been removed and is not part of the clean playback path.
 - Old `/stream/*` endpoint references in older deployment docs should be replaced with `/embed/*`.
 
 Migration checklist:

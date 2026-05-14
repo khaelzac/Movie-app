@@ -1,8 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const morgan = require('morgan');
-const compression = require('compression');
 const { env } = require('./config/env');
 const apiRoutes = require('./routes');
 const { rateLimiter } = require('./middleware/rateLimiter');
@@ -18,9 +16,10 @@ app.use(helmet({
   hsts: env.isProduction ? { maxAge: 15552000, includeSubDomains: true, preload: true } : false
 }));
 app.use(cors({ origin: env.allowedOrigins, credentials: false }));
-app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: '64kb' }));
-app.use(morgan(env.isProduction ? 'tiny' : 'dev'));
+if (!env.isProduction) {
+  app.use(require('morgan')('dev'));
+}
 app.use(rateLimiter);
 
 app.get('/health', noStore, (_req, res) => {

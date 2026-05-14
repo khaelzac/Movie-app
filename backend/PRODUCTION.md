@@ -18,6 +18,6 @@ EMBED_PROVIDER_BLACKLIST=
 EMBED_PROVIDER_SELECTION=random
 ```
 
-The API uses compression, Helmet security headers, rate limiting, response cache headers, and in-flight TMDB request de-duplication.
+The API uses Helmet security headers, rate limiting, response cache headers, and in-flight TMDB request de-duplication. Response compression is left to Vercel's edge/platform layer.
 
 Playback is embed-only. The backend signs Cloudflare Worker playback URLs and never resolves or returns raw media streams.

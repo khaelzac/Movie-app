@@ -16,8 +16,18 @@ const tmdb = axios.create({
   }
 });
 
+const cacheKey = (path, params) => {
+  const ordered = Object.keys(params)
+    .sort()
+    .reduce((acc, key) => {
+      acc[key] = params[key];
+      return acc;
+    }, {});
+  return `${path}:${JSON.stringify(ordered)}`;
+};
+
 const request = async (path, params = {}, ttl) => {
-  const key = `${path}:${JSON.stringify(params)}`;
+  const key = cacheKey(path, params);
   return getOrSet(key, async () => {
     const { data } = await tmdb.get(path, { params });
     return data;

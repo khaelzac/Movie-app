@@ -50,13 +50,37 @@ const appendQueryParams = (url, queryString) => {
   return parsed.toString();
 };
 
+const providerEnvKey = (id) => id.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+
+const validateBaseUrl = (baseUrl) => {
+  if (!baseUrl) return '';
+
+  let parsed;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    return '';
+  }
+
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return '';
+  parsed.hash = '';
+  parsed.search = '';
+  return parsed.toString().replace(/\/+$/, '');
+};
+
+const validatePattern = (pattern, fallback) => {
+  const value = String(pattern || fallback || '').trim();
+  if (!value || /^https?:\/\//i.test(value) || value.includes('..')) return fallback;
+  return value.startsWith('/') ? value : `/${value}`;
+};
+
 const providerHealthScore = (id) => numberValue(
-  envValue(`EMBED_PROVIDER_${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_HEALTH_SCORE`),
+  envValue(`EMBED_PROVIDER_${providerEnvKey(id)}_HEALTH_SCORE`),
   100
 );
 
 const providerEnabled = (id, index) => boolValue(
-  envValue(`EMBED_PROVIDER_${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_ENABLED`,
+  envValue(`EMBED_PROVIDER_${providerEnvKey(id)}_ENABLED`,
     index ? envValue(`AUTHORIZED_EMBED_PROVIDER_${index}_ENABLED`, 'true') : 'true'),
   true
 );
@@ -71,17 +95,21 @@ const providerConfig = ({
   index,
   enabled = true,
   healthScore = 100
-}) => ({
-  id,
-  name,
-  baseUrl,
-  moviePattern,
-  tvPattern,
-  queryParams,
-  enabled: enabled && providerEnabled(id, index),
-  healthScore: providerHealthScore(id) || healthScore,
-  index
-});
+}) => {
+  const normalizedBaseUrl = validateBaseUrl(baseUrl);
+
+  return {
+    id,
+    name,
+    baseUrl: normalizedBaseUrl,
+    moviePattern: validatePattern(moviePattern, '/movie/{tmdb_id}'),
+    tvPattern: validatePattern(tvPattern, '/tv/{tmdb_id}/{season}/{episode}'),
+    queryParams,
+    enabled: Boolean(normalizedBaseUrl) && enabled && providerEnabled(id, index),
+    healthScore: providerHealthScore(id) || healthScore,
+    index
+  };
+};
 
 const defaultProviders = [
   providerConfig({
@@ -108,7 +136,7 @@ const defaultProviders = [
     tvPattern: envValue('AUTHORIZED_EMBED_PROVIDER_2_TV_PATTERN', '/tv/{tmdb_id}/{season}/{episode}'),
     queryParams: envValue(
       'AUTHORIZED_EMBED_PROVIDER_2_QUERY_PARAMS',
-      'autoplay=false&player=jw&title=true&poster=true'
+      'autoplay=false&player=default&title=true&poster=true'
     )
   }),
   providerConfig({
@@ -191,7 +219,7 @@ const embedProviders = defaultProviders;
 
 const providerById = (providerId) => embedProviders.find((provider) => provider.id === providerId);
 
-const providerAllowlist = () => splitList(process.env.EMBED_PROVIDERS || process.env.STREAM_PROVIDERS);
+const providerAllowlist = () => splitList(process.env.EMBED_PROVIDERS);
 
 const orderedByAllowlist = (providers) => {
   const allowlist = providerAllowlist();

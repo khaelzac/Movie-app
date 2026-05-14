@@ -502,11 +502,6 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
               }
               return NavigationActionPolicy.ALLOW;
             },
-            shouldInterceptRequest: (_, request) async {
-              final uri = request.url;
-              if (_shouldBlockUrl(uri)) return _blockedResourceResponse();
-              return null;
-            },
             onCreateWindow: (_, createWindowAction) async {
               _showControlsTemporarily();
               return false;
@@ -601,7 +596,6 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
       iframeAllowFullscreen: true,
       supportMultipleWindows: false,
       useShouldOverrideUrlLoading: true,
-      useShouldInterceptRequest: true,
       transparentBackground: false,
       disableContextMenu: true,
       disableDefaultErrorPage: true,
@@ -615,7 +609,6 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
       useWideViewPort: true,
       loadWithOverviewMode: true,
       mixedContentMode: MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
-      contentBlockers: _contentBlockers(),
       regexToCancelSubFramesLoading:
           r'^(intent|market|tel|mailto|sms|geo|whatsapp|tg|viber):.*',
       userAgent:
@@ -638,30 +631,6 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
         source: _playbackPreferenceScript,
       ),
     ]);
-  }
-
-  List<ContentBlocker> _contentBlockers() {
-    final adHosts = _blockedHostSuffixes
-        .map((host) => host.replaceAll('.', r'\.'))
-        .join('|');
-
-    return [
-      ContentBlocker(
-        trigger: ContentBlockerTrigger(
-          urlFilter: r'.*://([^/]+\.)?(' + adHosts + r')/.*',
-          urlFilterIsCaseSensitive: false,
-        ),
-        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-      ),
-      ContentBlocker(
-        trigger: ContentBlockerTrigger(
-          urlFilter:
-              r'.*(/ads?/|/adserver/|/advert|/banner|/popunder|/popup|adtag|vpaid|vast\?).*',
-          urlFilterIsCaseSensitive: false,
-        ),
-        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-      ),
-    ];
   }
 
   Future<void> _injectMitigationScripts() async {
@@ -707,19 +676,6 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
 
     final url = parsed.toString().toLowerCase();
     return _blockedUrlFragments.any(url.contains);
-  }
-
-  WebResourceResponse _blockedResourceResponse() {
-    return WebResourceResponse(
-      contentType: 'text/plain',
-      contentEncoding: 'utf-8',
-      data: Uint8List(0),
-      statusCode: 204,
-      reasonPhrase: 'No Content',
-      headers: const <String, String>{
-        'Cache-Control': 'no-store',
-      },
-    );
   }
 
   void _startStartupTimeout(EmbedRequest? request) {

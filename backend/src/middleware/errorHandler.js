@@ -12,15 +12,7 @@ const errorHandler = (err, req, res, _next) => {
   const status = err.status || err.response?.status || 500;
   const message = err.response?.data?.status_message || err.message || 'Unexpected server error';
 
-  if (status === 502 && req.originalUrl.startsWith('/api/stream/')) {
-    console.warn('[stream-resolver]', {
-      path: req.originalUrl,
-      message,
-      cause: err.cause?.message,
-      upstreamStatus: err.cause?.response?.status,
-      upstreamUrl: err.cause?.config?.url
-    });
-  } else if (status >= 500) {
+  if (status >= 500) {
     console.error(err);
   }
 

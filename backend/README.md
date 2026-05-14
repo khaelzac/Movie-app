@@ -1,6 +1,6 @@
 # OCAMPOFLIX Backend
 
-Express.js TMDB proxy for the Flutter TV app. The TMDB API key lives only on the backend.
+Express.js API for TMDB metadata and secure embed playback URL generation. The backend does not extract streams, parse provider HTML, manipulate playlists, or return raw media URLs.
 
 ## Setup
 
@@ -22,14 +22,21 @@ STALE_CACHE_TTL_SECONDS=21600
 RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX=120
 REQUEST_TIMEOUT_MS=8000
-STREAM_RESOLVE_RETRIES=2
-STREAM_PROXY_BASE_URL=
-STREAM_PROXY_ENABLED=false
-STREAM_RESOLVER_VIA_PROXY=false
-STREAM_PROVIDER=disabled
-STREAM_PROVIDERS=
-VIDEASY_BASE_URL=
-VIDSRC_BASE_URL=
+
+EMBED_GATEWAY_BASE_URL=https://your-worker.workers.dev
+EMBED_GATEWAY_SECRET=replace_with_a_long_random_secret
+EMBED_TOKEN_TTL_SECONDS=900
+EMBED_PROVIDERS=env-1,env-2
+EMBED_PROVIDER_BLACKLIST=
+EMBED_PROVIDER_SELECTION=random
+
+AUTHORIZED_EMBED_PROVIDER_1_ENABLED=true
+EMBED_PROVIDER_ENV_1_HEALTH_SCORE=100
+
+AUTHORIZED_EMBED_PROVIDER_1_NAME=VidLink
+AUTHORIZED_EMBED_PROVIDER_1_BASE_URL=https://vidlink.pro
+AUTHORIZED_EMBED_PROVIDER_1_MOVIE_PATTERN=/movie/{tmdb_id}
+AUTHORIZED_EMBED_PROVIDER_1_TV_PATTERN=/tv/{tmdb_id}/{season}/{episode}
 ```
 
 ## Endpoints
@@ -41,66 +48,52 @@ VIDSRC_BASE_URL=
 - `GET /api/top-rated?page=1&mediaType=movie`
 - `GET /api/movie/:id`
 - `GET /api/tv/:id`
+- `GET /api/tv/:id/season/:season`
 - `GET /api/search?query=matrix&page=1`
 - `GET /api/genres?mediaType=movie`
 - `GET /api/recommendations/:id?mediaType=movie&page=1`
 - `GET /api/similar/:id?mediaType=movie&page=1`
-- `GET /api/stream/providers`
-- `GET /api/stream/movie/:tmdbId`
-- `GET /api/stream/movie/:tmdbId?provider=videasy`
-- `GET /api/stream/tv/:tmdbId/:season/:episode`
-- `GET /api/stream/tv/:tmdbId/:season/:episode?provider=vidsrc`
+- `GET /api/embed/providers`
+- `GET /api/embed/movie/:tmdbId`
+- `GET /api/embed/movie/:tmdbId?provider=env-1`
+- `GET /api/embed/tv/:tmdbId/:season/:episode`
+- `GET /api/embed/tv/:tmdbId/:season/:episode?provider=env-1`
 
-## Stream Providers
+## Embed Playback
 
-The stream endpoint uses `STREAM_PROVIDERS` to resolve direct HLS `.m3u8` streams from configured provider embeds, or falls back to `STREAM_PROVIDER` for a single provider. Keep playback providers backend-only.
-
-Most public provider docs describe iframe embed URLs, not direct HLS APIs. The native Flutter player needs a resolved `.m3u8`; if a provider only supports browser iframe playback or blocks server-side resolution, configure a provider/API that explicitly returns playable HLS for your authorized use case.
-
-Successful stream responses use this shape:
+The embed endpoints choose a configured authorized provider, build the provider iframe URL, sign a short-lived payload, and return a Cloudflare Worker playback URL:
 
 ```json
 {
-  "provider": "env-8",
-  "streamUrl": "https://cdn.example.com/master.m3u8",
-  "referer": "https://provider.example",
-  "subtitles": []
+  "success": true,
+  "provider": "VidLink",
+  "embedUrl": "https://your-worker.workers.dev/embed?token=...&signature=..."
 }
 ```
 
-Set `STREAM_PROXY_BASE_URL` to your Cloudflare Worker `/proxy` endpoint and `STREAM_PROXY_ENABLED=true` to return proxied HLS URLs to clients. If `STREAM_PROXY_ENABLED` is unset, the backend enables proxying automatically when `STREAM_PROXY_BASE_URL` is configured. The backend appends `url` and `referer` query parameters so the Worker can rewrite relative playlists and media segments.
+Provider config lives in `src/config/embedProviders.js`. Configure only providers you are authorized to embed.
 
-Set `STREAM_RESOLVER_VIA_PROXY=true` to also route provider HTML, script, and playlist validation fetches through the same Worker while resolving streams.
+Example provider utility usage:
 
-For providers that are authorized to return native HLS, set `AUTHORIZED_EMBED_PROVIDER_N_RESOLVER=direct-hls`. The provider URL can either be a direct `.m3u8` playlist or an API endpoint whose JSON/text response contains a `.m3u8` URL:
+```js
+const {
+  chooseEmbedProvider,
+  buildMovieEmbedUrl,
+  buildTvEmbedUrl
+} = require('./src/config/embedProviders');
 
-```bash
-AUTHORIZED_EMBED_PROVIDER_11_NAME=Direct HLS
-AUTHORIZED_EMBED_PROVIDER_11_BASE_URL=https://stream-api.example.com
-AUTHORIZED_EMBED_PROVIDER_11_MOVIE_PATTERN=/movie/{tmdb_id}
-AUTHORIZED_EMBED_PROVIDER_11_TV_PATTERN=/tv/{tmdb_id}/{season}/{episode}
-AUTHORIZED_EMBED_PROVIDER_11_RESOLVER=direct-hls
-STREAM_PROVIDERS=env-11
+const provider = chooseEmbedProvider({ strategy: 'best-health' });
+const movieUrl = buildMovieEmbedUrl(provider, 550);
+const tvUrl = buildTvEmbedUrl(provider, 1399, 1, 1);
 ```
-
-Supported provider module names:
-
-- `videasy`
-- `vidsrc`
-- `env-1` through `env-N` from `AUTHORIZED_EMBED_PROVIDER_N_*`
-- `disabled`
-
-Configure only providers you are authorized to use.
 
 ## Vercel
 
 1. Create the project in Vercel from the `backend` folder.
-2. Add `TMDB_API_KEY` in Vercel project environment variables.
+2. Add `TMDB_API_KEY`, `EMBED_GATEWAY_BASE_URL`, and `EMBED_GATEWAY_SECRET`.
 3. Add `ALLOWED_ORIGINS` with your frontend origin for production.
 4. Deploy with:
 
 ```bash
 vercel --prod
 ```
-
-For the full production workflow, see `../DEPLOYMENT.md`.

@@ -1,10 +1,10 @@
 const express = require('express');
 const catalogRoutes = require('./catalogRoutes');
-const streamRoutes = require('./streamRoutes');
+const embedRoutes = require('./embedRoutes');
 
 const router = express.Router();
 
-router.use('/', streamRoutes);
+router.use('/', embedRoutes);
 router.use('/', catalogRoutes);
 
 module.exports = router;

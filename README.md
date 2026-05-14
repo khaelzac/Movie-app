@@ -1,13 +1,14 @@
 # OCAMPOFLIX
 
-Production-oriented starter for a Netflix-like Flutter TV app with a secure Express TMDB proxy.
+Production-oriented starter for a Netflix-like Flutter TV app with a secure Express TMDB metadata API and embed playback URL generator.
 
 ## Architecture
 
-- `backend/`: Express REST API. TMDB API key stays here, loaded from `.env`.
+- `backend/`: Express REST API. TMDB API key and embed provider config stay here, loaded from `.env`.
 - `frontend/`: Flutter app shell for Android TV, Google TV, mouse, keyboard, and touch.
 - Frontend talks only to backend endpoints under `/api`.
 - TMDB images are loaded by URL; TMDB API requests are proxied through the backend.
+- Playback URLs are signed Cloudflare Worker embed URLs. The backend does not extract or proxy raw media streams.
 
 ## Install Commands
 
@@ -49,6 +50,7 @@ vercel --prod
 
 Full production deployment instructions are in:
 
+- [ARCHITECTURE.md](ARCHITECTURE.md)
 - [DEPLOYMENT.md](DEPLOYMENT.md)
 - [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md)
 - [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md)
@@ -69,14 +71,14 @@ CI/CD workflows live in `.github/workflows/`.
 - `GET /api/recommendations/:id?mediaType=movie&page=1`
 - `GET /api/similar/:id?mediaType=movie&page=1`
 - `GET /api/genres/:slug?page=1`
-- `GET /api/stream/movie/:tmdbId`
-- `GET /api/stream/tv/:tmdbId/:season/:episode`
+- `GET /api/embed/movie/:tmdbId`
+- `GET /api/embed/tv/:tmdbId/:season/:episode`
 
 ## Player Rule
 
 TMDB is used only for metadata such as titles, posters, backdrops, genres, ratings, recommendations, and cast.
 
-Playback source URLs are generated only by backend stream provider modules under `backend/src/providers`. The Flutter app never constructs playback provider URLs directly and does not use TMDB trailers or YouTube for playback.
+Playback source URLs are generated only by the backend embed service using provider configuration in `backend/src/config/embedProviders.js`. The Flutter app never constructs provider URLs directly, and the backend never returns raw media playlist or segment URLs.
 
 ## Next Prompt Workflow
 

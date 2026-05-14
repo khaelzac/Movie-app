@@ -57,8 +57,13 @@ vercel env add STALE_CACHE_TTL_SECONDS production
 vercel env add RATE_LIMIT_WINDOW_MS production
 vercel env add RATE_LIMIT_MAX production
 vercel env add REQUEST_TIMEOUT_MS production
-vercel env add STREAM_PROVIDER production
-vercel env add STREAM_PROVIDERS production
+vercel env add EMBED_GATEWAY_BASE_URL production
+vercel env add EMBED_GATEWAY_SECRET production
+vercel env add EMBED_TOKEN_TTL_SECONDS production
+vercel env add EMBED_PROVIDER production
+vercel env add EMBED_PROVIDERS production
+vercel env add EMBED_PROVIDER_SELECTION production
+vercel env add EMBED_PROVIDER_BLACKLIST production
 vercel env add CUSTOM_EMBED_NAME production
 vercel env add CUSTOM_EMBED_BASE_URL production
 vercel env add CUSTOM_EMBED_MOVIE_PATTERN production
@@ -81,8 +86,13 @@ STALE_CACHE_TTL_SECONDS=21600
 RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX=120
 REQUEST_TIMEOUT_MS=8000
-STREAM_PROVIDER=disabled
-STREAM_PROVIDERS=
+EMBED_GATEWAY_BASE_URL=https://your-worker.workers.dev
+EMBED_GATEWAY_SECRET=replace_with_a_long_random_secret
+EMBED_TOKEN_TTL_SECONDS=900
+EMBED_PROVIDER=
+EMBED_PROVIDERS=env-2,env-9,env-10
+EMBED_PROVIDER_SELECTION=random
+EMBED_PROVIDER_BLACKLIST=
 CUSTOM_EMBED_NAME=
 CUSTOM_EMBED_BASE_URL=
 CUSTOM_EMBED_MOVIE_PATTERN=/movie/{tmdb_id}
@@ -108,10 +118,10 @@ Verify:
 ```bash
 curl https://movie-app-gamma-sand-21.vercel.app/health
 curl "https://movie-app-gamma-sand-21.vercel.app/api/trending?page=1"
-curl "https://movie-app-gamma-sand-21.vercel.app/api/stream/movie/687163"
+curl "https://movie-app-gamma-sand-21.vercel.app/api/embed/movie/687163"
 ```
 
-If `STREAM_PROVIDER=disabled`, stream endpoints return `501` until an authorized provider base URL is configured.
+Embed endpoints return `501` until `EMBED_GATEWAY_BASE_URL`, `EMBED_GATEWAY_SECRET`, and at least one authorized provider base URL are configured.
 
 ## 3. Frontend: Backend URL
 

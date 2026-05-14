@@ -10,7 +10,7 @@
 - `npm audit --audit-level=moderate` reports no vulnerabilities.
 - `/health` returns `{ "ok": true }`.
 - `/api/trending?page=1` returns data.
-- Stream endpoints return a backend-generated provider URL when an authorized provider is configured.
+- Embed endpoints return a backend-generated Cloudflare Worker URL when an authorized provider is configured.
 - Flutter never constructs playback provider URLs directly.
 - TMDB trailers and YouTube are not used for playback.
 - Rate limit values are appropriate for expected traffic.

@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/media_item.dart';
 import '../models/media_details.dart';
-import '../models/stream_source.dart';
+import '../models/embed_source.dart';
 import '../services/catalog_repository.dart';
-import '../services/stream_repository.dart';
+import '../services/embed_repository.dart';
 
 typedef MediaPageLoader = Future<List<MediaItem>> Function(
   CatalogRepository repository,
@@ -52,19 +52,19 @@ final tvDetailsProvider = FutureProvider.family<MediaDetails, int>((ref, id) {
 final tvSeasonProvider =
     FutureProvider.family<TvSeason, TvSeasonRequest>((ref, request) {
   return ref
-      .watch(streamRepositoryProvider)
+      .watch(embedRepositoryProvider)
       .tvSeason(request.id, request.season);
 });
 
-final streamProvidersProvider = FutureProvider<List<StreamProviderInfo>>((ref) {
-  return ref.watch(streamRepositoryProvider).providers();
+final embedProvidersProvider = FutureProvider<List<EmbedProviderInfo>>((ref) {
+  return ref.watch(embedRepositoryProvider).providers();
 });
 
-final streamSourceProvider = FutureProvider.autoDispose
-    .family<StreamSource, StreamRequest>((ref, request) {
+final embedSourceProvider = FutureProvider.autoDispose
+    .family<EmbedSource, EmbedRequest>((ref, request) {
   ref.cacheFor(const Duration(seconds: 20));
 
-  final repository = ref.watch(streamRepositoryProvider);
+  final repository = ref.watch(embedRepositoryProvider);
   if (request.mediaType == 'tv') {
     return repository.tv(request.id, request.season ?? 1, request.episode ?? 1,
         provider: request.provider);
@@ -181,8 +181,8 @@ class TvSeasonRequest {
   int get hashCode => Object.hash(id, season);
 }
 
-class StreamRequest {
-  const StreamRequest({
+class EmbedRequest {
+  const EmbedRequest({
     required this.mediaType,
     required this.id,
     this.season,
@@ -196,7 +196,7 @@ class StreamRequest {
   final int? episode;
   final String? provider;
 
-  StreamRequest copyWith({
+  EmbedRequest copyWith({
     String? mediaType,
     int? id,
     int? season,
@@ -204,7 +204,7 @@ class StreamRequest {
     String? provider,
     bool clearProvider = false,
   }) {
-    return StreamRequest(
+    return EmbedRequest(
       mediaType: mediaType ?? this.mediaType,
       id: id ?? this.id,
       season: season ?? this.season,
@@ -215,7 +215,7 @@ class StreamRequest {
 
   @override
   bool operator ==(Object other) {
-    return other is StreamRequest &&
+    return other is EmbedRequest &&
         other.mediaType == mediaType &&
         other.id == id &&
         other.season == season &&

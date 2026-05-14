@@ -10,11 +10,14 @@ STALE_CACHE_TTL_SECONDS=21600
 RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX=120
 REQUEST_TIMEOUT_MS=8000
-STREAM_PROVIDER=disabled
-VIDEASY_BASE_URL=
-VIDSRC_BASE_URL=
+EMBED_GATEWAY_BASE_URL=https://your-worker.workers.dev
+EMBED_GATEWAY_SECRET=replace_with_a_long_random_secret
+EMBED_TOKEN_TTL_SECONDS=900
+EMBED_PROVIDERS=env-1,env-2
+EMBED_PROVIDER_BLACKLIST=
+EMBED_PROVIDER_SELECTION=random
 ```
 
-The API now uses compression, Helmet security headers, rate limiting, response cache headers, and in-flight upstream request de-duplication.
+The API uses compression, Helmet security headers, rate limiting, response cache headers, and in-flight TMDB request de-duplication.
 
-Playback providers are selected by `STREAM_PROVIDER` and must be configured only for providers you are authorized to use.
+Playback is embed-only. The backend signs Cloudflare Worker playback URLs and never resolves or returns raw media streams.

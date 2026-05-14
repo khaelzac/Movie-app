@@ -1,15 +1,138 @@
+import 'dart:collection';
 import 'dart:async';
 
-import 'package:better_player/better_player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../../models/embed_source.dart';
 import '../../models/media_details.dart';
-import '../../models/stream_source.dart';
 import '../../providers/catalog_providers.dart';
 import '../../services/local_library_repository.dart';
+
+const _popupMitigationScript = r'''
+(function () {
+  if (window.__ocampoEmbedGuardsInstalled) return;
+  window.__ocampoEmbedGuardsInstalled = true;
+
+  var blockedSchemes = /^(intent|market|tel|mailto|sms|geo|whatsapp|tg|viber):/i;
+  var blockedHosts = [
+    'doubleclick.net',
+    'googlesyndication.com',
+    'googleadservices.com',
+    'adnxs.com',
+    'popads.net',
+    'popcash.net',
+    'propellerads.com',
+    'onclickads.net',
+    'exoclick.com',
+    'adsterra.com',
+    'hilltopads.net'
+  ];
+
+  function hostBlocked(url) {
+    try {
+      var host = new URL(url, location.href).hostname.toLowerCase();
+      return blockedHosts.some(function (blocked) {
+        return host === blocked || host.endsWith('.' + blocked);
+      });
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function shouldBlock(url) {
+    if (!url) return true;
+    if (blockedSchemes.test(String(url))) return true;
+    if (hostBlocked(url)) return true;
+    return /\/ads?\/|\/adserver\/|\/advert|\/banner|\/pop(?:up|under)|adtag|vpaid|vast\?/i.test(String(url));
+  }
+
+  window.open = function () { return null; };
+
+  document.addEventListener('click', function (event) {
+    var link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+    if (!link) return;
+
+    var href = link.getAttribute('href') || '';
+    if (link.target && link.target !== '_self') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (shouldBlock(href)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }, true);
+
+  document.addEventListener('submit', function (event) {
+    var action = event.target && event.target.action;
+    if (action && shouldBlock(action)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }, true);
+
+  function hardenLinks(root) {
+    (root || document).querySelectorAll('a[target], form[target]').forEach(function (node) {
+      node.removeAttribute('target');
+    });
+  }
+
+  hardenLinks(document);
+  new MutationObserver(function (mutations) {
+    mutations.forEach(function (mutation) {
+      mutation.addedNodes.forEach(function (node) {
+        if (node.nodeType === 1) hardenLinks(node);
+      });
+    });
+  }).observe(document.documentElement, { childList: true, subtree: true });
+})();
+''';
+
+const _pageCleanupScript = r'''
+(function () {
+  var selectors = [
+    '[id*="ad" i]',
+    '[class*="ad-" i]',
+    '[class*="ads" i]',
+    '[class*="advert" i]',
+    '[class*="banner" i]',
+    '[class*="popup" i]',
+    '[class*="popunder" i]',
+    '[class*="overlay" i]',
+    'iframe[src*="doubleclick"]',
+    'iframe[src*="googlesyndication"]',
+    'iframe[src*="popads"]'
+  ];
+
+  selectors.forEach(function (selector) {
+    try {
+      document.querySelectorAll(selector).forEach(function (node) {
+        var rect = node.getBoundingClientRect();
+        var coversScreen = rect.width >= window.innerWidth * 0.55 && rect.height >= window.innerHeight * 0.30;
+        if (coversScreen || selector.indexOf('iframe') === 0 || /ad|banner|popup|popunder/i.test(node.className + ' ' + node.id)) {
+          node.style.setProperty('display', 'none', 'important');
+          node.style.setProperty('pointer-events', 'none', 'important');
+        }
+      });
+    } catch (_) {}
+  });
+
+  var closeLabels = /^(x|×|close|skip|dismiss|no thanks|not now)$/i;
+  document.querySelectorAll('button, [role="button"], .close, .btn-close, [aria-label]').forEach(function (node) {
+    var label = (node.getAttribute('aria-label') || node.textContent || '').trim();
+    if (!closeLabels.test(label)) return;
+    var rect = node.getBoundingClientRect();
+    if (rect.width <= 120 && rect.height <= 80) {
+      try { node.click(); } catch (_) {}
+    }
+  });
+})();
+''';
 
 class PlaybackPage extends ConsumerStatefulWidget {
   const PlaybackPage({
@@ -36,55 +159,88 @@ class PlaybackPage extends ConsumerStatefulWidget {
 }
 
 class _PlaybackPageState extends ConsumerState<PlaybackPage> {
-  BetterPlayerController? _playerController;
-  StreamRequest? _activeRequest;
-  String? _activeUrl;
+  final FocusNode _focusNode = FocusNode(debugLabel: 'PlaybackWebView');
+
+  InAppWebViewController? _webViewController;
+  EmbedRequest? _activeRequest;
+  Uri? _activeEmbedUri;
   String? _selectedProvider;
   String? _playbackError;
-  bool _isPreparing = true;
-  bool _isBuffering = false;
+  bool _isResolving = true;
+  bool _isPageLoading = true;
   bool _controlsVisible = true;
+  bool _webViewReady = false;
   int _retryCount = 0;
+  double _progress = 0;
   Timer? _controlsTimer;
   Timer? _startupTimer;
-  Timer? _bufferingTimer;
 
   static const _maxRetriesPerProvider = 2;
-  static const _startupTimeout = Duration(seconds: 22);
-  static const _bufferingTimeout = Duration(seconds: 35);
+  static const _startupTimeout = Duration(seconds: 28);
+  static const _blockedHostSuffixes = <String>[
+    'doubleclick.net',
+    'googlesyndication.com',
+    'googleadservices.com',
+    'adnxs.com',
+    'adsystem.com',
+    'popads.net',
+    'popcash.net',
+    'propellerads.com',
+    'propeller-tracking.com',
+    'onclickads.net',
+    'exoclick.com',
+    'juicyads.com',
+    'trafficjunky.net',
+    'revcontent.com',
+    'taboola.com',
+    'outbrain.com',
+    'mgid.com',
+    'adsterra.com',
+    'hilltopads.net',
+    'pushnative.com',
+    'yllix.com',
+    'histats.com',
+    'scorecardresearch.com',
+  ];
+  static const _blockedUrlFragments = <String>[
+    '/ads/',
+    '/adserver/',
+    '/advert',
+    '/banner',
+    '/popunder',
+    '/popup',
+    'ad_click',
+    'adtag',
+    'clickadu',
+    'vast?',
+    'vpaid',
+  ];
 
   @override
   void initState() {
     super.initState();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-    _scheduleControlsHide();
+    _enterPlayerMode();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     _controlsTimer?.cancel();
     _startupTimer?.cancel();
-    _bufferingTimer?.cancel();
-    _disposePlayer();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    _focusNode.dispose();
+    _exitPlayerMode();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final providers = ref.watch(streamProvidersProvider);
+    final providers = ref.watch(embedProvidersProvider);
     final providerOptions =
-        providers.valueOrNull ?? const <StreamProviderInfo>[];
+        providers.valueOrNull ?? const <EmbedProviderInfo>[];
     final configuredProviders = providerOptions
-        .where((provider) => provider.configured)
+        .where((provider) => provider.configured && provider.enabled)
         .toList(growable: false);
     final selectedProvider = _selectedProvider == null
         ? null
@@ -106,133 +262,257 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
         effectiveProvider == null) {
       return Scaffold(
         backgroundColor: Colors.black,
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            _PlaybackError(
-              message: providers.hasError
-                  ? 'The server list could not be loaded. Check the backend URL and Vercel environment variables.'
-                  : 'No configured playback servers were found. Add provider names and base URLs in the backend environment, then redeploy.',
-              onRetry: () => ref.invalidate(streamProvidersProvider),
-            ),
-            _bottomServerSwitcher(providerOptions, '', providers.isLoading),
-          ],
+        body: _PlaybackError(
+          message: providers.hasError
+              ? 'The embed server list could not be loaded. Check the backend URL and environment variables.'
+              : 'No configured embed providers were found. Add provider URLs in the backend environment, then redeploy.',
+          onRetry: () => ref.invalidate(embedProvidersProvider),
         ),
       );
     }
 
-    final request = StreamRequest(
+    final request = EmbedRequest(
       mediaType: widget.mediaType,
       id: widget.id,
       season: widget.season,
       episode: widget.episode,
       provider: selectedProvider?.id,
     );
-    final source = ref.watch(streamSourceProvider(request));
+    final source = ref.watch(embedSourceProvider(request));
 
     return PopScope(
       canPop: true,
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: source.when(
-          data: (source) {
-            final controller = _preparePlayer(source, request);
-
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                Listener(
-                  behavior: HitTestBehavior.translucent,
-                  onPointerDown: (_) => _showControlsTemporarily(),
-                  child: Center(
-                    child: BetterPlayer(controller: controller),
-                  ),
+      child: Shortcuts(
+        shortcuts: const <ShortcutActivator, Intent>{
+          SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.gameButtonA): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.goBack): DismissIntent(),
+          SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+          SingleActivator(LogicalKeyboardKey.contextMenu):
+              _ShowControlsIntent(),
+          SingleActivator(LogicalKeyboardKey.mediaPlayPause):
+              _ShowControlsIntent(),
+        },
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                _showControlsTemporarily();
+                return null;
+              },
+            ),
+            DismissIntent: CallbackAction<DismissIntent>(
+              onInvoke: (_) {
+                Navigator.of(context).maybePop();
+                return null;
+              },
+            ),
+            _ShowControlsIntent: CallbackAction<_ShowControlsIntent>(
+              onInvoke: (_) {
+                _showControlsTemporarily();
+                return null;
+              },
+            ),
+          },
+          child: Focus(
+            focusNode: _focusNode,
+            autofocus: true,
+            child: Scaffold(
+              backgroundColor: Colors.black,
+              body: source.when(
+                data: (source) => _buildPlayer(
+                  context,
+                  source,
+                  request,
+                  providerOptions,
+                  effectiveProvider.id,
+                  providers.isLoading,
                 ),
-                if (_isPreparing || _isBuffering)
-                  _LoadingOverlay(
-                    message:
-                        _isPreparing ? 'Loading stream...' : 'Buffering...',
-                  ),
-                if (_playbackError != null)
-                  ColoredBox(
-                    color: Colors.black,
-                    child: _PlaybackError(
-                      message: _playbackError!,
+                error: (error, _) => Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _PlaybackError(
+                      message: _friendlyPlaybackMessage(error),
                       onRetry: () => _retryCurrentProvider(request),
                     ),
-                  ),
-                if (_playbackError != null)
-                  _bottomServerSwitcher(
-                    providerOptions,
-                    effectiveProvider.id,
-                    providers.isLoading,
-                    request: request,
-                  ),
-                AnimatedOpacity(
-                  opacity: _controlsVisible ? 1 : 0,
-                  duration: const Duration(milliseconds: 180),
-                  child: IgnorePointer(
-                    ignoring: !_controlsVisible,
-                    child: SafeArea(
-                      child: Align(
-                        alignment: Alignment.topLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: _PlaybackControls(
-                            mediaType: widget.mediaType,
-                            onBack: () => Navigator.of(context).maybePop(),
-                            onServers: () => _showServerSheet(
-                              context,
-                              providers.valueOrNull ??
-                                  const <StreamProviderInfo>[],
-                              source.provider,
-                            ),
-                            onSaveProgress: _saveProgress,
-                            onNextEpisode:
-                                widget.mediaType == 'tv' ? _nextEpisode : null,
-                          ),
-                        ),
-                      ),
+                    _bottomServerSwitcher(
+                      providerOptions,
+                      effectiveProvider.id,
+                      providers.isLoading,
+                      request: request,
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            );
-          },
-          error: (error, _) => Stack(
-            fit: StackFit.expand,
-            children: [
-              _PlaybackError(
-                message: _friendlyPlaybackMessage(error),
-                onRetry: () => ref.invalidate(streamSourceProvider(request)),
+                loading: () => const _LoadingOverlay(
+                  message: 'Preparing embed...',
+                ),
               ),
-              _bottomServerSwitcher(
-                providerOptions,
-                effectiveProvider.id,
-                providers.isLoading,
-                request: request,
-              ),
-            ],
-          ),
-          loading: () => const Center(
-            child: CircularProgressIndicator(color: AppColors.netflixRed),
+            ),
           ),
         ),
       ),
     );
   }
 
-  BetterPlayerController _preparePlayer(
-    StreamSource source,
-    StreamRequest request,
+  Widget _buildPlayer(
+    BuildContext context,
+    EmbedSource source,
+    EmbedRequest request,
+    List<EmbedProviderInfo> providers,
+    String selectedProvider,
+    bool providersLoading,
   ) {
-    if (_activeUrl == source.url && _playerController != null) {
-      return _playerController!;
-    }
+    final embedUri = Uri.parse(source.embedUrl);
+    _prepareEmbed(source, request, embedUri);
 
-    _disposePlayer();
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => _showControlsTemporarily(),
+          child: InAppWebView(
+            key: ValueKey(source.embedUrl),
+            initialUrlRequest: URLRequest(url: WebUri(source.embedUrl)),
+            initialUserScripts: _initialUserScripts(),
+            initialSettings: _webViewSettings(),
+            onWebViewCreated: (controller) {
+              _webViewController = controller;
+              _webViewReady = true;
+            },
+            onLoadStart: (_, url) {
+              if (!_isMainEmbedUrl(url, embedUri)) return;
+              if (!mounted) return;
+              setState(() {
+                _isPageLoading = true;
+                _playbackError = null;
+                _progress = 0;
+              });
+              _startStartupTimeout(request);
+            },
+            onProgressChanged: (_, progress) {
+              if (!mounted) return;
+              setState(() => _progress = progress / 100);
+            },
+            onLoadStop: (_, url) {
+              if (!_isMainEmbedUrl(url, embedUri)) return;
+              _startupTimer?.cancel();
+              _injectMitigationScripts();
+              if (!mounted) return;
+              setState(() {
+                _isResolving = false;
+                _isPageLoading = false;
+                _playbackError = null;
+                _progress = 1;
+              });
+              _scheduleControlsHide();
+            },
+            onReceivedError: (_, request, error) {
+              if (request.isForMainFrame != true) return;
+              _handlePlaybackFailure(
+                request: _activeRequest,
+                message:
+                    'The embed page failed to load. Retry or pick another server.',
+              );
+            },
+            onReceivedHttpError: (_, request, response) {
+              if (request.isForMainFrame != true) return;
+              if ((response.statusCode ?? 0) < 400) return;
+              _handlePlaybackFailure(
+                request: _activeRequest,
+                message:
+                    'The embed gateway returned HTTP ${response.statusCode}. Retry or pick another server.',
+              );
+            },
+            shouldOverrideUrlLoading: (_, navigationAction) async {
+              final uri = navigationAction.request.url;
+              final isMainFrame = navigationAction.isForMainFrame;
+              if (uri == null) return NavigationActionPolicy.CANCEL;
+              if (_shouldBlockUrl(uri)) {
+                _showControlsTemporarily();
+                return NavigationActionPolicy.CANCEL;
+              }
+              if (isMainFrame && !_isAllowedTopLevelNavigation(uri, embedUri)) {
+                _showControlsTemporarily();
+                return NavigationActionPolicy.CANCEL;
+              }
+              return NavigationActionPolicy.ALLOW;
+            },
+            shouldInterceptRequest: (_, request) async {
+              final uri = request.url;
+              if (_shouldBlockUrl(uri)) return _blockedResourceResponse();
+              return null;
+            },
+            onCreateWindow: (_, createWindowAction) async {
+              _showControlsTemporarily();
+              return false;
+            },
+            onEnterFullscreen: (_) => _enterPlayerMode(),
+            onExitFullscreen: (_) => _enterPlayerMode(),
+          ),
+        ),
+        if (_isResolving || _isPageLoading)
+          _LoadingOverlay(
+            message: _isResolving ? 'Preparing embed...' : 'Loading player...',
+            progress: _progress,
+          ),
+        if (_playbackError != null)
+          ColoredBox(
+            color: Colors.black,
+            child: _PlaybackError(
+              message: _playbackError!,
+              onRetry: () => _retryCurrentProvider(request),
+            ),
+          ),
+        if (_playbackError != null)
+          _bottomServerSwitcher(
+            providers,
+            selectedProvider,
+            providersLoading,
+            request: request,
+          ),
+        AnimatedOpacity(
+          opacity: _controlsVisible ? 1 : 0,
+          duration: const Duration(milliseconds: 180),
+          child: IgnorePointer(
+            ignoring: !_controlsVisible,
+            child: SafeArea(
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: _PlaybackControls(
+                    mediaType: widget.mediaType,
+                    providerName: source.provider.isEmpty
+                        ? selectedProvider
+                        : source.provider,
+                    canReload: _webViewReady,
+                    onBack: () => Navigator.of(context).maybePop(),
+                    onReload: _reloadWebView,
+                    onServers: () => _showServerSheet(
+                      context,
+                      providers,
+                      selectedProvider,
+                    ),
+                    onSaveProgress: _saveProgress,
+                    onNextEpisode:
+                        widget.mediaType == 'tv' ? _nextEpisode : null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _prepareEmbed(EmbedSource source, EmbedRequest request, Uri embedUri) {
+    if (_activeEmbedUri?.toString() == source.embedUrl) return;
+
     _activeRequest = request.provider == null
-        ? StreamRequest(
+        ? EmbedRequest(
             mediaType: request.mediaType,
             id: request.id,
             season: request.season,
@@ -240,226 +520,225 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
             provider: source.provider,
           )
         : request;
-    _activeUrl = source.url;
+    _activeEmbedUri = embedUri;
     _retryCount = 0;
-    _isPreparing = true;
-    _isBuffering = false;
+    _isResolving = false;
+    _isPageLoading = true;
     _playbackError = null;
-    _startStartupTimeout();
+    _progress = 0;
+    _startStartupTimeout(request);
+  }
 
-    final dataSource = BetterPlayerDataSource(
-      BetterPlayerDataSourceType.network,
-      source.url,
-      videoFormat: BetterPlayerVideoFormat.hls,
-      videoExtension: 'm3u8',
-      headers: _headersFor(source),
-      subtitles: _subtitleSources(source),
-      useAsmsTracks: true,
-      useAsmsAudioTracks: true,
-      useAsmsSubtitles: true,
-      cacheConfiguration: const BetterPlayerCacheConfiguration(
-        useCache: false,
-      ),
-      bufferingConfiguration: const BetterPlayerBufferingConfiguration(
-        minBufferMs: 12000,
-        maxBufferMs: 50000,
-        bufferForPlaybackMs: 1500,
-        bufferForPlaybackAfterRebufferMs: 3000,
-      ),
+  InAppWebViewSettings _webViewSettings() {
+    return InAppWebViewSettings(
+      javaScriptEnabled: true,
+      javaScriptCanOpenWindowsAutomatically: false,
+      mediaPlaybackRequiresUserGesture: false,
+      allowsInlineMediaPlayback: true,
+      iframeAllowFullscreen: true,
+      supportMultipleWindows: false,
+      useShouldOverrideUrlLoading: true,
+      useShouldInterceptRequest: true,
+      transparentBackground: false,
+      disableContextMenu: true,
+      disableDefaultErrorPage: true,
+      disableLongPressContextMenuOnLinks: true,
+      supportZoom: false,
+      builtInZoomControls: false,
+      displayZoomControls: false,
+      domStorageEnabled: true,
+      databaseEnabled: true,
+      thirdPartyCookiesEnabled: true,
+      useWideViewPort: true,
+      loadWithOverviewMode: true,
+      mixedContentMode: MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
+      contentBlockers: _contentBlockers(),
+      regexToCancelSubFramesLoading:
+          r'^(intent|market|tel|mailto|sms|geo|whatsapp|tg|viber):.*',
+      userAgent:
+          'Mozilla/5.0 (Linux; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     );
+  }
 
-    final controller = BetterPlayerController(
-      BetterPlayerConfiguration(
-        autoPlay: true,
-        fit: BoxFit.contain,
-        aspectRatio: 16 / 9,
-        fullScreenByDefault: false,
-        autoDetectFullscreenDeviceOrientation: true,
-        autoDetectFullscreenAspectRatio: true,
-        allowedScreenSleep: false,
-        handleLifecycle: true,
-        eventListener: _onPlayerEvent,
-        controlsConfiguration: BetterPlayerControlsConfiguration(
-          enableFullscreen: true,
-          enablePlaybackSpeed: true,
-          enableSubtitles: source.subtitles.isNotEmpty,
-          enableQualities: true,
-          enableAudioTracks: true,
-          loadingColor: AppColors.netflixRed,
-          progressBarPlayedColor: AppColors.netflixRed,
-          progressBarHandleColor: AppColors.netflixRed,
-          controlBarColor: Colors.black.withValues(alpha: 0.72),
-          iconsColor: Colors.white,
-          textColor: Colors.white,
-        ),
-        errorBuilder: (context, errorMessage) => _PlaybackError(
-          message: _friendlyPlaybackMessage(errorMessage ?? 'Playback failed.'),
-          onRetry: () => _retryCurrentProvider(request),
-        ),
+  UnmodifiableListView<UserScript> _initialUserScripts() {
+    return UnmodifiableListView<UserScript>([
+      UserScript(
+        groupName: 'embed-popup-mitigation',
+        injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        forMainFrameOnly: false,
+        source: _popupMitigationScript,
       ),
-      betterPlayerDataSource: dataSource,
+    ]);
+  }
+
+  List<ContentBlocker> _contentBlockers() {
+    final adHosts = _blockedHostSuffixes
+        .map((host) => host.replaceAll('.', r'\.'))
+        .join('|');
+
+    return [
+      ContentBlocker(
+        trigger: ContentBlockerTrigger(
+          urlFilter: r'.*://([^/]+\.)?(' + adHosts + r')/.*',
+          urlFilterIsCaseSensitive: false,
+        ),
+        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
+      ),
+      ContentBlocker(
+        trigger: ContentBlockerTrigger(
+          urlFilter:
+              r'.*(/ads?/|/adserver/|/advert|/banner|/popunder|/popup|adtag|vpaid|vast\?).*',
+          urlFilterIsCaseSensitive: false,
+        ),
+        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
+      ),
+    ];
+  }
+
+  Future<void> _injectMitigationScripts() async {
+    await _webViewController?.evaluateJavascript(
+        source: _popupMitigationScript);
+    await _webViewController?.evaluateJavascript(source: _pageCleanupScript);
+  }
+
+  bool _isMainEmbedUrl(WebUri? url, Uri embedUri) {
+    if (url == null) return false;
+    final current = Uri.tryParse(url.toString());
+    if (current == null) return false;
+    return current.scheme == embedUri.scheme &&
+        current.host == embedUri.host &&
+        current.path == embedUri.path;
+  }
+
+  bool _isAllowedTopLevelNavigation(WebUri uri, Uri embedUri) {
+    final current = Uri.tryParse(uri.toString());
+    if (current == null) return false;
+    if (current.scheme != 'https') return false;
+    return current.host == embedUri.host && current.path == embedUri.path;
+  }
+
+  bool _shouldBlockUrl(WebUri uri) {
+    final parsed = Uri.tryParse(uri.toString());
+    if (parsed == null) return true;
+
+    final scheme = parsed.scheme.toLowerCase();
+    if (scheme.isEmpty) return false;
+    if (scheme != 'https' && scheme != 'http') return true;
+    if (scheme == 'http') return true;
+
+    final host = parsed.host.toLowerCase();
+    if (host.isEmpty) return true;
+    if (_blockedHostSuffixes.any(
+      (suffix) => host == suffix || host.endsWith('.$suffix'),
+    )) {
+      return true;
+    }
+
+    final url = parsed.toString().toLowerCase();
+    return _blockedUrlFragments.any(url.contains);
+  }
+
+  WebResourceResponse _blockedResourceResponse() {
+    return WebResourceResponse(
+      contentType: 'text/plain',
+      contentEncoding: 'utf-8',
+      data: Uint8List(0),
+      statusCode: 204,
+      reasonPhrase: 'No Content',
+      headers: const <String, String>{
+        'Cache-Control': 'no-store',
+      },
     );
-
-    _playerController = controller;
-    return controller;
   }
 
-  Map<String, String> _headersFor(StreamSource source) {
-    final headers = <String, String>{
-      'Accept':
-          'application/vnd.apple.mpegurl,application/x-mpegURL,application/vnd.apple.mpegurl,text/plain,*/*',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'User-Agent':
-          'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
-    };
-    if (source.referer.isNotEmpty) {
-      headers['Referer'] = source.referer;
-      final origin = Uri.tryParse(source.referer)?.origin;
-      if (origin != null) headers['Origin'] = origin;
-    }
-    return headers;
-  }
-
-  List<BetterPlayerSubtitlesSource> _subtitleSources(StreamSource source) {
-    return source.subtitles
-        .map((subtitle) => BetterPlayerSubtitlesSource(
-              type: BetterPlayerSubtitlesSourceType.network,
-              name: subtitle.label,
-              urls: [subtitle.url],
-              headers: _headersFor(source),
-            ))
-        .toList(growable: false);
-  }
-
-  void _onPlayerEvent(BetterPlayerEvent event) {
-    if (!mounted) return;
-
-    switch (event.betterPlayerEventType) {
-      case BetterPlayerEventType.initialized:
-        _startupTimer?.cancel();
-        _bufferingTimer?.cancel();
-        setState(() {
-          _isPreparing = false;
-          _isBuffering = false;
-          _playbackError = null;
-        });
-        _scheduleControlsHide();
-        break;
-      case BetterPlayerEventType.bufferingStart:
-        setState(() => _isBuffering = true);
-        _startBufferingTimeout();
-        break;
-      case BetterPlayerEventType.bufferingUpdate:
-        _startBufferingTimeout();
-        break;
-      case BetterPlayerEventType.bufferingEnd:
-        _bufferingTimer?.cancel();
-        setState(() => _isBuffering = false);
-        break;
-      case BetterPlayerEventType.exception:
-        _handlePlaybackFailure(
-          message:
-              'The HLS stream failed during playback. The URL may have expired.',
-        );
-        break;
-      default:
-        break;
-    }
-  }
-
-  void _startStartupTimeout() {
+  void _startStartupTimeout(EmbedRequest? request) {
     _startupTimer?.cancel();
     _startupTimer = Timer(_startupTimeout, () {
-      if (!mounted || !_isPreparing || _playbackError != null) return;
+      if (!mounted || _playbackError != null) return;
+      if (!_isResolving && !_isPageLoading) return;
       _handlePlaybackFailure(
+        request: request,
         message:
-            'The stream took too long to start. The playlist may be expired or blocked.',
+            'The embed page took too long to load. Retry or pick another server.',
       );
     });
   }
 
-  void _startBufferingTimeout() {
-    _bufferingTimer?.cancel();
-    _bufferingTimer = Timer(_bufferingTimeout, () {
-      if (!mounted || !_isBuffering || _playbackError != null) return;
-      _handlePlaybackFailure(
-        message:
-            'Playback stalled while buffering. The HLS segments may have expired.',
-      );
-    });
-  }
-
-  Future<void> _handlePlaybackFailure({String? message}) async {
+  Future<void> _handlePlaybackFailure({
+    required EmbedRequest? request,
+    String? message,
+  }) async {
     if (!mounted) return;
 
-    final request = _activeRequest;
     if (request != null && _retryCount < _maxRetriesPerProvider) {
       _retryCount += 1;
       _startupTimer?.cancel();
-      _bufferingTimer?.cancel();
-      _disposePlayer();
       setState(() {
-        _activeUrl = null;
+        _activeEmbedUri = null;
         _playbackError = null;
-        _isPreparing = true;
-        _isBuffering = false;
+        _isResolving = true;
+        _isPageLoading = true;
+        _progress = 0;
       });
       await Future<void>.delayed(Duration(milliseconds: 350 * _retryCount));
-      ref.invalidate(streamSourceProvider(request));
+      ref.invalidate(embedSourceProvider(request));
       return;
     }
 
-    final providers = ref.read(streamProvidersProvider).valueOrNull ??
-        const <StreamProviderInfo>[];
+    final providers = ref.read(embedProvidersProvider).valueOrNull ??
+        const <EmbedProviderInfo>[];
     final configuredProviders = providers
-        .where((provider) => provider.configured)
+        .where((provider) => provider.configured && provider.enabled)
         .toList(growable: false);
     final nextProvider = _nextProvider(configuredProviders);
 
     if (nextProvider != null) {
       setState(() {
         _selectedProvider = nextProvider.id;
-        _activeUrl = null;
+        _activeEmbedUri = null;
         _playbackError = null;
-        _isPreparing = true;
-        _isBuffering = false;
+        _isResolving = true;
+        _isPageLoading = true;
+        _progress = 0;
       });
       return;
     }
 
     setState(() {
-      _isPreparing = false;
-      _isBuffering = false;
+      _isResolving = false;
+      _isPageLoading = false;
       _playbackError = message ??
-          'Native playback could not start this HLS stream. Try another server or check the backend stream resolver.';
+          'The embed player could not start. Try another server or request a fresh link.';
     });
   }
 
-  void _retryCurrentProvider(StreamRequest request) {
+  void _retryCurrentProvider(EmbedRequest request) {
     _startupTimer?.cancel();
-    _bufferingTimer?.cancel();
-    _disposePlayer();
     setState(() {
-      _activeUrl = null;
+      _activeEmbedUri = null;
       _playbackError = null;
-      _isPreparing = true;
-      _isBuffering = false;
+      _isResolving = true;
+      _isPageLoading = true;
+      _progress = 0;
     });
-    ref.invalidate(streamSourceProvider(request));
+    ref.invalidate(embedSourceProvider(request));
   }
 
-  void _disposePlayer() {
-    final controller = _playerController;
-    if (controller == null) return;
-    controller.dispose();
-    _playerController = null;
+  Future<void> _reloadWebView() async {
+    _showControlsTemporarily();
+    setState(() {
+      _playbackError = null;
+      _isPageLoading = true;
+      _progress = 0;
+    });
+    await _webViewController?.reload();
   }
 
   Widget _bottomServerSwitcher(
-    List<StreamProviderInfo> providers,
+    List<EmbedProviderInfo> providers,
     String selectedProvider,
     bool isLoading, {
-    StreamRequest? request,
+    EmbedRequest? request,
   }) {
     return SafeArea(
       child: Align(
@@ -475,12 +754,13 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
               if (provider == selectedProvider) return;
               setState(() {
                 _selectedProvider = provider;
-                _activeUrl = null;
+                _activeEmbedUri = null;
                 _playbackError = null;
-                _isPreparing = true;
+                _isResolving = true;
+                _isPageLoading = true;
               });
               if (request != null) {
-                ref.invalidate(streamSourceProvider(request));
+                ref.invalidate(embedSourceProvider(request));
               }
             },
           ),
@@ -490,7 +770,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   }
 
   void _showControlsTemporarily() {
-    if (!_controlsVisible) {
+    if (!_controlsVisible && mounted) {
       setState(() => _controlsVisible = true);
     }
     _scheduleControlsHide();
@@ -499,7 +779,10 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   void _scheduleControlsHide() {
     _controlsTimer?.cancel();
     _controlsTimer = Timer(const Duration(seconds: 5), () {
-      if (!mounted || _isPreparing || _isBuffering || _playbackError != null) {
+      if (!mounted ||
+          _isResolving ||
+          _isPageLoading ||
+          _playbackError != null) {
         return;
       }
       setState(() => _controlsVisible = false);
@@ -507,44 +790,42 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   }
 
   String _friendlyPlaybackMessage(Object error) {
-    final raw = error.toString();
-    if (raw.contains('501') ||
-        raw.toLowerCase().contains('disabled or unsupported')) {
-      return 'This server is not configured for playback. Pick another server or update the backend environment variables.';
+    final raw = error.toString().toLowerCase();
+    if (raw.contains('501') || raw.contains('disabled or unsupported')) {
+      return 'This embed provider is not configured. Pick another server or update the backend environment variables.';
     }
-    if (raw.toLowerCase().contains('socket') ||
-        raw.toLowerCase().contains('timeout') ||
-        raw.toLowerCase().contains('connection') ||
-        raw.toLowerCase().contains('took too long')) {
-      return 'This server did not respond. Try another server.';
+    if (raw.contains('token') || raw.contains('401') || raw.contains('403')) {
+      return 'The signed embed link expired or was rejected. Retry to request a fresh link.';
     }
-    if (raw.toLowerCase().contains('expired') ||
-        raw.toLowerCase().contains('403') ||
-        raw.toLowerCase().contains('401')) {
-      return 'This stream link expired or was rejected. Retry to request a fresh link, or pick another server.';
+    if (raw.contains('socket') ||
+        raw.contains('timeout') ||
+        raw.contains('connection') ||
+        raw.contains('too long')) {
+      return 'This embed provider did not respond. Try another server.';
     }
-    if (raw.toLowerCase().contains('m3u8') ||
-        raw.toLowerCase().contains('hls') ||
-        raw.toLowerCase().contains('extm3u')) {
-      return 'This server did not return a playable HLS stream. Try another server.';
+    if (raw.contains('https') || raw.contains('invalid embed')) {
+      return 'The backend returned an invalid embed URL. Check the Worker gateway configuration.';
     }
-    return 'This server could not start native playback. Try another server.';
+    return 'This embed provider could not start playback. Try another server.';
   }
 
-  StreamProviderInfo? _providerById(
-      List<StreamProviderInfo> providers, String id) {
+  EmbedProviderInfo? _providerById(
+    List<EmbedProviderInfo> providers,
+    String id,
+  ) {
     for (final provider in providers) {
       if (provider.id == id) return provider;
     }
     return null;
   }
 
-  StreamProviderInfo? _defaultPlaybackProvider(
-      List<StreamProviderInfo> providers) {
+  EmbedProviderInfo? _defaultPlaybackProvider(
+    List<EmbedProviderInfo> providers,
+  ) {
     return providers.isEmpty ? null : providers.first;
   }
 
-  StreamProviderInfo? _nextProvider(List<StreamProviderInfo> providers) {
+  EmbedProviderInfo? _nextProvider(List<EmbedProviderInfo> providers) {
     if (providers.length < 2) return null;
 
     final currentId = _selectedProvider ?? _activeRequest?.provider;
@@ -559,7 +840,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
 
   void _showServerSheet(
     BuildContext context,
-    List<StreamProviderInfo> providers,
+    List<EmbedProviderInfo> providers,
     String selectedProvider,
   ) {
     showModalBottomSheet<void>(
@@ -570,7 +851,6 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
         final visibleProviders = providers
             .where((provider) => provider.id.isNotEmpty)
             .toList(growable: false);
-
         final maxHeight = MediaQuery.sizeOf(context).height * 0.72;
 
         return SafeArea(
@@ -623,7 +903,7 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                                       : AppColors.textMuted,
                                   fontWeight: FontWeight.w800,
                                 ),
-                            onSelected: provider.configured
+                            onSelected: provider.configured && provider.enabled
                                 ? (_) {
                                     Navigator.of(context).pop();
                                     if (provider.id == selectedProvider) {
@@ -631,10 +911,10 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
                                     }
                                     setState(() {
                                       _selectedProvider = provider.id;
-                                      _activeUrl = null;
+                                      _activeEmbedUri = null;
                                       _playbackError = null;
-                                      _isPreparing = true;
-                                      _isBuffering = false;
+                                      _isResolving = true;
+                                      _isPageLoading = true;
                                     });
                                   }
                                 : null,
@@ -651,16 +931,14 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
   }
 
   Future<void> _saveProgress() async {
-    final position = await _playerController?.videoPlayerController?.position;
-    final duration = _playerController?.videoPlayerController?.value.duration;
-
     await ref.read(libraryControllerProvider.notifier).saveProgress(
           _detailsShell(),
-          positionSeconds: position?.inSeconds ?? 0,
-          durationSeconds: duration?.inSeconds ?? 0,
+          positionSeconds: 0,
+          durationSeconds: 0,
           season: widget.season,
           episode: widget.episode,
         );
+    _showControlsTemporarily();
   }
 
   void _nextEpisode() {
@@ -690,12 +968,36 @@ class _PlaybackPageState extends ConsumerState<PlaybackPage> {
       backdropUrl: widget.backdropUrl,
     );
   }
+
+  void _enterPlayerMode() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
+  void _exitPlayerMode() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+}
+
+class _ShowControlsIntent extends Intent {
+  const _ShowControlsIntent();
 }
 
 class _LoadingOverlay extends StatelessWidget {
-  const _LoadingOverlay({required this.message});
+  const _LoadingOverlay({
+    required this.message,
+    this.progress = 0,
+  });
 
   final String message;
+  final double progress;
 
   @override
   Widget build(BuildContext context) {
@@ -714,6 +1016,18 @@ class _LoadingOverlay extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
             ),
+            if (progress > 0 && progress < 1) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: 220,
+                child: LinearProgressIndicator(
+                  value: progress.clamp(0, 1),
+                  minHeight: 3,
+                  color: AppColors.netflixRed,
+                  backgroundColor: Colors.white.withValues(alpha: 0.14),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -730,7 +1044,7 @@ class _ServerSwitcher extends StatelessWidget {
     required this.onSelected,
   });
 
-  final List<StreamProviderInfo> providers;
+  final List<EmbedProviderInfo> providers;
   final String selectedProvider;
   final bool isLoading;
   final String? errorMessage;
@@ -802,13 +1116,13 @@ class _ServerSwitcher extends StatelessWidget {
                   backgroundColor:
                       AppColors.surfaceRaised.withValues(alpha: 0.92),
                   labelStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: provider.configured
+                        color: provider.configured && provider.enabled
                             ? Colors.white
                             : AppColors.textMuted,
                         fontWeight: FontWeight.w800,
                       ),
                   side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
-                  onSelected: provider.configured
+                  onSelected: provider.configured && provider.enabled
                       ? (_) => onSelected(provider.id)
                       : null,
                 ),
@@ -823,14 +1137,20 @@ class _ServerSwitcher extends StatelessWidget {
 class _PlaybackControls extends StatelessWidget {
   const _PlaybackControls({
     required this.mediaType,
+    required this.providerName,
+    required this.canReload,
     required this.onBack,
+    required this.onReload,
     required this.onServers,
     required this.onSaveProgress,
     this.onNextEpisode,
   });
 
   final String mediaType;
+  final String providerName;
+  final bool canReload;
   final VoidCallback onBack;
+  final VoidCallback onReload;
   final VoidCallback onServers;
   final VoidCallback onSaveProgress;
   final VoidCallback? onNextEpisode;
@@ -841,6 +1161,7 @@ class _PlaybackControls extends StatelessWidget {
       child: Wrap(
         spacing: 10,
         runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           IconButton.filledTonal(
             onPressed: onBack,
@@ -850,20 +1171,26 @@ class _PlaybackControls extends StatelessWidget {
           FilledButton.icon(
             onPressed: onServers,
             icon: const Icon(Icons.dns_rounded),
-            label: const Text('Servers'),
+            label: Text(providerName.isEmpty ? 'Servers' : providerName),
+            style: _buttonStyle(context),
+          ),
+          FilledButton.icon(
+            onPressed: canReload ? onReload : null,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Reload'),
             style: _buttonStyle(context),
           ),
           FilledButton.icon(
             onPressed: onSaveProgress,
             icon: const Icon(Icons.bookmark_rounded),
-            label: const Text('Save Progress'),
+            label: const Text('Save'),
             style: _buttonStyle(context),
           ),
           if (mediaType == 'tv' && onNextEpisode != null)
             FilledButton.icon(
               onPressed: onNextEpisode,
               icon: const Icon(Icons.skip_next_rounded),
-              label: const Text('Next Episode'),
+              label: const Text('Next'),
               style: _buttonStyle(context),
             ),
         ],
@@ -875,6 +1202,8 @@ class _PlaybackControls extends StatelessWidget {
     return FilledButton.styleFrom(
       backgroundColor: Colors.black.withValues(alpha: 0.62),
       foregroundColor: Colors.white,
+      disabledBackgroundColor: Colors.black.withValues(alpha: 0.34),
+      disabledForegroundColor: Colors.white38,
     );
   }
 }

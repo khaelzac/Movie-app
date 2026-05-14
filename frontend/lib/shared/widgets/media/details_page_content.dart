@@ -8,7 +8,7 @@ import '../../../core/navigation/focus_scroll.dart';
 import '../../../core/navigation/app_routes.dart';
 import '../../../core/responsive/responsive_layout.dart';
 import '../../../models/media_details.dart';
-import '../../../models/stream_source.dart';
+import '../../../models/embed_source.dart';
 import '../../../providers/catalog_providers.dart';
 import '../../../services/local_library_repository.dart';
 import '../loading/shimmer_box.dart';
